@@ -125,3 +125,34 @@ namespace Cpp.Numeric.Tests
   assert! in_range Int8 (100 : UInt8) == true
 
 end Cpp.Numeric.Tests
+
+namespace Cpp
+
+def negative_never_equals_unsigned_test :=
+  show cmp_equal (Int8.mk' (-1)) (0 : UInt8) = false from rfl
+
+def negative_less_than_unsigned_test :=
+  show cmp_less (Int8.mk' (-1)) (0 : UInt8) = true from rfl
+
+def cmp_equal_symmetric_test :=
+  show cmp_equal (42 : UInt32) (42 : UInt32) = cmp_equal (42 : UInt32) (42 : UInt32) from rfl
+
+def cmp_less_irreflexive_test :=
+  show cmp_less (42 : UInt32) (42 : UInt32) = false from rfl
+
+def cmp_less_asymmetric_test :=
+  show cmp_less (10 : UInt32) (20 : UInt32) = true from rfl
+
+def in_range_min_test :=
+  show in_range UInt8 (NumericLimits.min : UInt8) = true from rfl
+
+def in_range_max_test :=
+  show in_range UInt8 (NumericLimits.max : UInt8) = true from rfl
+
+def negative_not_in_unsigned_range_test :=
+  show in_range UInt8 (Int8.mk' (-1)) = false from rfl
+
+def lowest_eq_min_for_integers_test :=
+  show IntPromotable.toInt (NumericLimits.lowest : UInt8) = IntPromotable.toInt (NumericLimits.min : UInt8) from rfl
+
+end Cpp

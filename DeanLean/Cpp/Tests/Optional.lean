@@ -60,3 +60,28 @@ namespace Cpp.Optional.Tests
   assert! result == Cpp.Optional.nullopt
 
 end Cpp.Optional.Tests
+
+namespace Cpp.Optional
+
+def monad_left_identity_test :=
+  show (pure 5 : Optional Nat) >>= Optional.some = Optional.some 5 from rfl
+
+def monad_right_identity_test :=
+  show (Optional.some 5) >>= (pure · : Nat → Optional Nat) = Optional.some 5 from rfl
+
+def monad_associativity_test :=
+  show ((Optional.some 3) >>= (fun n => Optional.some (n + 1))) >>= (fun n => Optional.some (n * 2))
+    = (Optional.some 3) >>= (fun n => (fun n => Optional.some (n + 1)) n >>= (fun n => Optional.some (n * 2))) from rfl
+
+def transform_compose_test :=
+  show ((Optional.some 3).transform (· + 1)).transform (· * 2)
+    = (Optional.some 3).transform ((· * 2) ∘ (· + 1)) from rfl
+
+def transform_id_test :=
+  show (Optional.some 5).transform id = Optional.some 5 from rfl
+
+def or_else_and_then_nullopt_test :=
+  show ((Optional.nullopt : Optional Nat).or_else (fun () => Optional.some 5)).and_then (fun n => Optional.some (n + 1))
+    = ((fun () => Optional.some 5) ()).and_then (fun n => Optional.some (n + 1)) from rfl
+
+end Cpp.Optional

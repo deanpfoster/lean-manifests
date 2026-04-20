@@ -36,8 +36,12 @@ macro "ProvenTheorem " n:ident " : " t:term : command => do
   let proofName := Lean.mkIdent (n.getId.appendAfter "_proof")
   `(theorem $n : $t := $proofName)
 
-macro "TestedConjecture " n:ident " : " t:term : command =>
-  `(theorem $n : $t := by sorry)
+open Lean in
+macro "TestedConjecture " n:ident " : " t:term : command => do
+  let testName := Lean.mkIdent (n.getId.appendAfter "_test")
+  `(set_option linter.unusedVariables false in
+    noncomputable def _tc_check := $testName
+    theorem $n : $t := by sorry)
 
 macro "UnprovenConjecture " n:ident " : " t:term : command =>
   `(theorem $n : $t := by sorry)
