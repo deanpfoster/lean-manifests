@@ -1,0 +1,76 @@
+import DeanLean.Cpp.Code.Numeric
+import DeanLean.Cpp.Proofs.Numeric
+import DeanLean.Cpp.Tests.Numeric
+
+/-! # C++ numeric_limits (N4950 §17.3.5) and integer comparison (§22.2.7)
+
+  Formalizes `numeric_limits` as a typeclass with instances for
+  UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64.
+  Also formalizes safe integer comparison functions: cmp_equal,
+  cmp_less, cmp_greater, and in_range.
+-/
+
+namespace Cpp
+
+variable {T U : Type}
+
+/-! ## Signatures for integer comparison functions -/
+
+Signature Cpp.cmp_equal : {T U : Type} → [IntPromotable T] → [IntPromotable U] → T → U → Bool
+Signature Cpp.cmp_less : {T U : Type} → [IntPromotable T] → [IntPromotable U] → T → U → Bool
+Signature Cpp.cmp_greater : {T U : Type} → [IntPromotable T] → [IntPromotable U] → T → U → Bool
+Signature Cpp.in_range : (R : Type) → {T : Type} → [NumericLimits R] → [IntPromotable R] →
+    [IntPromotable T] → T → Bool
+
+/-! ## Proven properties: min ≤ max -/
+
+ProvenTheorem NumericLimits.min_le_max_UInt8 : NumericLimits.min_le_max_prop UInt8
+ProvenTheorem NumericLimits.min_le_max_UInt16 : NumericLimits.min_le_max_prop UInt16
+ProvenTheorem NumericLimits.min_le_max_UInt32 : NumericLimits.min_le_max_prop UInt32
+ProvenTheorem NumericLimits.min_le_max_UInt64 : NumericLimits.min_le_max_prop UInt64
+ProvenTheorem NumericLimits.min_le_max_Int8 : NumericLimits.min_le_max_prop Int8
+ProvenTheorem NumericLimits.min_le_max_Int16 : NumericLimits.min_le_max_prop Int16
+ProvenTheorem NumericLimits.min_le_max_Int32 : NumericLimits.min_le_max_prop Int32
+ProvenTheorem NumericLimits.min_le_max_Int64 : NumericLimits.min_le_max_prop Int64
+
+/-! ## Proven properties: digits > 0 -/
+
+ProvenTheorem NumericLimits.digits_pos_UInt8 : NumericLimits.digits_pos_prop UInt8
+ProvenTheorem NumericLimits.digits_pos_UInt16 : NumericLimits.digits_pos_prop UInt16
+ProvenTheorem NumericLimits.digits_pos_UInt32 : NumericLimits.digits_pos_prop UInt32
+ProvenTheorem NumericLimits.digits_pos_UInt64 : NumericLimits.digits_pos_prop UInt64
+ProvenTheorem NumericLimits.digits_pos_Int8 : NumericLimits.digits_pos_prop Int8
+ProvenTheorem NumericLimits.digits_pos_Int16 : NumericLimits.digits_pos_prop Int16
+ProvenTheorem NumericLimits.digits_pos_Int32 : NumericLimits.digits_pos_prop Int32
+ProvenTheorem NumericLimits.digits_pos_Int64 : NumericLimits.digits_pos_prop Int64
+
+/-! ## Proven properties: is_signed correctness -/
+
+ProvenTheorem NumericLimits.is_signed_correct_Int8 :
+    NumericLimits.is_signed_correct_prop Int8
+ProvenTheorem NumericLimits.is_signed_correct_Int16 :
+    NumericLimits.is_signed_correct_prop Int16
+ProvenTheorem NumericLimits.is_signed_correct_Int32 :
+    NumericLimits.is_signed_correct_prop Int32
+ProvenTheorem NumericLimits.is_signed_correct_Int64 :
+    NumericLimits.is_signed_correct_prop Int64
+
+ProvenTheorem NumericLimits.unsigned_min_nonneg_UInt8 :
+    NumericLimits.unsigned_min_nonneg_prop UInt8
+ProvenTheorem NumericLimits.unsigned_min_nonneg_UInt16 :
+    NumericLimits.unsigned_min_nonneg_prop UInt16
+ProvenTheorem NumericLimits.unsigned_min_nonneg_UInt32 :
+    NumericLimits.unsigned_min_nonneg_prop UInt32
+ProvenTheorem NumericLimits.unsigned_min_nonneg_UInt64 :
+    NumericLimits.unsigned_min_nonneg_prop UInt64
+
+/-! ## Proven properties: cmp correctness -/
+
+ProvenTheorem cmp_equal_correct :
+    ∀ [IntPromotable T] [IntPromotable U] (t : T) (u : U), cmp_equal_correct_prop t u
+ProvenTheorem cmp_less_correct :
+    ∀ [IntPromotable T] [IntPromotable U] (t : T) (u : U), cmp_less_correct_prop t u
+ProvenTheorem cmp_greater_flip :
+    ∀ [IntPromotable T] [IntPromotable U] (t : T) (u : U), cmp_greater_flip_prop t u
+
+end Cpp
