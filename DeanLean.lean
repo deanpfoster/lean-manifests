@@ -4,3 +4,6 @@ import DeanLean.Cpp.Optional
 import DeanLean.Cpp.Variant
 import DeanLean.Cpp.Concepts
 import DeanLean.Cpp.Numeric
+import DeanLean.Cpp.Expected
+import DeanLean.Cpp.Ordering
+import DeanLean.Cpp.Algorithm
