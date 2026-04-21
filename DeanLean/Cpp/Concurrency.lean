@@ -39,6 +39,14 @@ import DeanLean.Cpp.Tests.Concurrency
   - MemoryOrder: relaxed, acquire, release, acq_rel, seq_cst
   - AtomicOp: access + memory order
   - releaseAcquireSync: release store → acquire load specification
+
+  ## Layer 5: Concurrency patterns (proven)
+
+  - acquire_release_guarantee: sb;sw;sb chain yields hb
+  - MessagePassingPattern: data write, release store, acquire load, data read
+  - message_passing_is_race_free: message passing has no data race
+  - MutexExecution: two critical sections on the same mutex
+  - mutex_critical_sections_ordered: CS₁ happens-before CS₂
 -/
 
 namespace Cpp.Concurrency
@@ -127,6 +135,31 @@ ProvenTheorem sb_preserves_thread :
 ProvenTheorem sw_crosses_threads :
     ∀ {exec : Execution} {e1 e2 : Event},
     exec.synchronizesWith e1 e2 → e1.threadId ≠ e2.threadId
+
+/-! ## Proven theorems: Concurrency patterns -/
+
+ProvenTheorem acquire_release_guarantee :
+    ∀ {exec : Execution} {before_store store_event load_event after_load : Event},
+    exec.sequencedBefore before_store store_event →
+    exec.synchronizesWith store_event load_event →
+    exec.sequencedBefore load_event after_load →
+    HappensBefore exec before_store after_load
+
+ProvenTheorem message_passing_data_ordered :
+    ∀ {exec : Execution} (mp : MessagePassingPattern exec),
+    HappensBefore exec mp.dataWrite mp.dataRead
+
+ProvenTheorem message_passing_is_race_free :
+    ∀ {exec : Execution} (mp : MessagePassingPattern exec),
+    ¬ DataRace exec mp.dataWriteAccess mp.dataReadAccess
+
+ProvenTheorem mutex_critical_sections_ordered :
+    ∀ {exec : Execution} (mx : MutexExecution exec),
+    HappensBefore exec mx.work₁ mx.work₂
+
+ProvenTheorem mutex_lock_order :
+    ∀ {exec : Execution} (mx : MutexExecution exec),
+    HappensBefore exec mx.lock₁ mx.lock₂
 
 /-! ## Tested conjectures -/
 

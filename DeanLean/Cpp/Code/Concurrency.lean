@@ -179,4 +179,73 @@ def releaseAcquireSync (store load : AtomicOp) : Prop :=
   (load.order = .acquire ∨ load.order = .acq_rel ∨ load.order = .seq_cst) ∧
   store.access.event.threadId ≠ load.access.event.threadId
 
+/-! ## Layer 5: Concurrency patterns -/
+
+/-- The message-passing pattern:
+    Thread 1 writes data (w), then release-stores a flag (s).
+    Thread 2 acquire-loads the flag (l), then reads data (r).
+    The store synchronizes-with the load.
+
+    This captures the classic idiom:
+      Thread 1: data = 42; flag.store(1, release);
+      Thread 2: while (!flag.load(acquire)); use(data);
+-/
+structure MessagePassingPattern (exec : Execution) where
+  /-- The data write event (thread 1) -/
+  dataWrite : Event
+  /-- The release store of the flag (thread 1) -/
+  flagStore : Event
+  /-- The acquire load of the flag (thread 2) -/
+  flagLoad  : Event
+  /-- The data read event (thread 2) -/
+  dataRead  : Event
+  /-- The data write is sequenced-before the flag store -/
+  sb_write_store : exec.sequencedBefore dataWrite flagStore
+  /-- The flag store synchronizes-with the flag load -/
+  sw_store_load  : exec.synchronizesWith flagStore flagLoad
+  /-- The flag load is sequenced-before the data read -/
+  sb_load_read   : exec.sequencedBefore flagLoad dataRead
+  /-- The data write and read access the same location -/
+  same_location  : Nat
+
+/-- The data write as a MemoryAccess. -/
+def MessagePassingPattern.dataWriteAccess {exec : Execution}
+    (mp : MessagePassingPattern exec) : MemoryAccess :=
+  ⟨mp.dataWrite, mp.same_location, .write⟩
+
+/-- The data read as a MemoryAccess. -/
+def MessagePassingPattern.dataReadAccess {exec : Execution}
+    (mp : MessagePassingPattern exec) : MemoryAccess :=
+  ⟨mp.dataRead, mp.same_location, .read⟩
+
+/-- A mutex execution with two critical sections:
+    Thread 1: lock₁ (acquire), work₁, unlock₁ (release)
+    Thread 2: lock₂ (acquire from unlock₁), work₂, unlock₂ (release)
+
+    The unlock₁ synchronizes-with lock₂, ordering the two critical sections.
+-/
+structure MutexExecution (exec : Execution) where
+  /-- Thread 1's lock (acquire) -/
+  lock₁   : Event
+  /-- Thread 1's work event -/
+  work₁   : Event
+  /-- Thread 1's unlock (release) -/
+  unlock₁ : Event
+  /-- Thread 2's lock (acquire from unlock₁) -/
+  lock₂   : Event
+  /-- Thread 2's work event -/
+  work₂   : Event
+  /-- Thread 2's unlock (release) -/
+  unlock₂ : Event
+  /-- lock₁ is sequenced-before work₁ -/
+  sb_lock₁_work₁     : exec.sequencedBefore lock₁ work₁
+  /-- work₁ is sequenced-before unlock₁ -/
+  sb_work₁_unlock₁   : exec.sequencedBefore work₁ unlock₁
+  /-- unlock₁ synchronizes-with lock₂ -/
+  sw_unlock₁_lock₂   : exec.synchronizesWith unlock₁ lock₂
+  /-- lock₂ is sequenced-before work₂ -/
+  sb_lock₂_work₂     : exec.sequencedBefore lock₂ work₂
+  /-- work₂ is sequenced-before unlock₂ -/
+  sb_work₂_unlock₂   : exec.sequencedBefore work₂ unlock₂
+
 end Cpp.Concurrency

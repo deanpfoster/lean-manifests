@@ -129,4 +129,55 @@ theorem sw_crosses_threads_proof {e1 e2 : Event}
     (h : exec.synchronizesWith e1 e2) : e1.threadId ≠ e2.threadId :=
   exec.sw_diff_thread e1 e2 h
 
+/-! ## Layer 5 proofs: Concurrency patterns -/
+
+/-- The fundamental theorem of acquire/release: if a release store
+    synchronizes-with an acquire load, then everything sequenced-before
+    the store happens-before everything sequenced-after the load.
+    This is the key theorem that makes message passing work. -/
+theorem acquire_release_guarantee_proof :
+    ∀ {exec : Execution} {before_store store_event load_event after_load : Event},
+    exec.sequencedBefore before_store store_event →
+    exec.synchronizesWith store_event load_event →
+    exec.sequencedBefore load_event after_load →
+    HappensBefore exec before_store after_load :=
+  fun hsb_before hsw hsb_after =>
+    HappensBefore.trans
+      (HappensBefore.trans (HappensBefore.sb hsb_before) (HappensBefore.sw hsw))
+      (HappensBefore.sb hsb_after)
+
+/-- In the message-passing pattern, the data write happens-before the data read.
+    This is a direct consequence of the acquire/release guarantee. -/
+theorem message_passing_data_ordered_proof {exec : Execution}
+    (mp : MessagePassingPattern exec) :
+    HappensBefore exec mp.dataWrite mp.dataRead :=
+  acquire_release_guarantee_proof mp.sb_write_store mp.sw_store_load mp.sb_load_read
+
+/-- The message-passing pattern is race-free: the data write and data read
+    are not a data race, because the write happens-before the read. -/
+theorem message_passing_is_race_free_proof {exec : Execution}
+    (mp : MessagePassingPattern exec) :
+    ¬ DataRace exec mp.dataWriteAccess mp.dataReadAccess := by
+  simp only [MessagePassingPattern.dataWriteAccess, MessagePassingPattern.dataReadAccess]
+  intro ⟨_, hnhb, _⟩
+  exact hnhb (message_passing_data_ordered_proof mp)
+
+/-- In a mutex execution, thread 1's work happens-before thread 2's work.
+    The chain is: work₁ →sb unlock₁ →sw lock₂ →sb work₂ -/
+theorem mutex_critical_sections_ordered_proof {exec : Execution}
+    (mx : MutexExecution exec) :
+    HappensBefore exec mx.work₁ mx.work₂ :=
+  HappensBefore.trans
+    (HappensBefore.trans (HappensBefore.sb mx.sb_work₁_unlock₁) (HappensBefore.sw mx.sw_unlock₁_lock₂))
+    (HappensBefore.sb mx.sb_lock₂_work₂)
+
+/-- In a mutex execution, everything from lock₁ to unlock₁ happens-before
+    everything from lock₂ to unlock₂. Specifically, lock₁ hb lock₂. -/
+theorem mutex_lock_order_proof {exec : Execution}
+    (mx : MutexExecution exec) :
+    HappensBefore exec mx.lock₁ mx.lock₂ :=
+  HappensBefore.trans
+    (HappensBefore.trans (HappensBefore.sb mx.sb_lock₁_work₁) (HappensBefore.sb mx.sb_work₁_unlock₁))
+    (HappensBefore.sw mx.sw_unlock₁_lock₂)
+
 end Cpp.Concurrency

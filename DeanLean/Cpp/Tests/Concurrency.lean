@@ -88,6 +88,57 @@ namespace Cpp.Concurrency.Tests
   -- Cross-thread sync is between different threads
   assert! e0_1.threadId != e1_0.threadId
 
+/-! ## Scenario: Message passing pattern structure -/
+
+#eval do
+  -- Verify the events used in a message-passing pattern
+  let w := Event.mk 0 0   -- data write
+  let s := Event.mk 0 1   -- release store flag
+  let l := Event.mk 1 0   -- acquire load flag
+  let r := Event.mk 1 1   -- data read
+
+  -- Thread assignments are correct
+  assert! w.threadId == 0
+  assert! s.threadId == 0
+  assert! l.threadId == 1
+  assert! r.threadId == 1
+
+  -- Sequencing within threads
+  assert! w.seqNo < s.seqNo
+  assert! l.seqNo < r.seqNo
+
+  -- Cross-thread sync
+  assert! s.threadId != l.threadId
+
+/-! ## Scenario: Mutex with two critical sections -/
+
+#eval do
+  -- Thread 0: lock, work, unlock
+  let lock1   := Event.mk 0 0
+  let work1   := Event.mk 0 1
+  let unlock1 := Event.mk 0 2
+  -- Thread 1: lock, work, unlock
+  let lock2   := Event.mk 1 0
+  let work2   := Event.mk 1 1
+  let unlock2 := Event.mk 1 2
+
+  -- Thread assignments
+  assert! lock1.threadId == 0
+  assert! work1.threadId == 0
+  assert! unlock1.threadId == 0
+  assert! lock2.threadId == 1
+  assert! work2.threadId == 1
+  assert! unlock2.threadId == 1
+
+  -- Sequencing
+  assert! lock1.seqNo < work1.seqNo
+  assert! work1.seqNo < unlock1.seqNo
+  assert! lock2.seqNo < work2.seqNo
+  assert! work2.seqNo < unlock2.seqNo
+
+  -- Cross-thread sync between unlock1 and lock2
+  assert! unlock1.threadId != lock2.threadId
+
 end Cpp.Concurrency.Tests
 
 /-! ## Named test defs for TestedConjectures -/
