@@ -197,6 +197,77 @@ The enforcement is structural (Lean's import system), not a custom macro.
   that a reader never needs to open Code or Proofs to understand a theorem.
   Run `generate_exports.sh` after adding theorems to the header.
 
+## What goes in a header
+
+A header has three sections:
+
+### 1. Vocabulary (the domain language)
+
+Short definitions and comments explaining the concepts used in theorem
+types. A reader who understands the vocabulary can read every theorem
+without opening any other file.
+
+Example from a sorting header:
+```
+⟪tm⟫       — extract the return value from a TimeM computation
+tm.time    — extract the cost (comparison count)
+IsSorted l — List.Pairwise (· ≤ ·) l
+l₁ ~ l₂   — l₁ is a permutation of l₂
+```
+
+This vocabulary is the **shared language** of the domain. Once defined,
+it works across every sorting algorithm — mergeSort, quickSort, heapSort
+all use the same four concepts. The more modules you add, the cheaper
+each header becomes: the vocabulary is paid once.
+
+### 2. Public theorems (the contract)
+
+Only the theorems a consumer would use. Internal lemmas (stepping stones
+to the public results) stay in Proofs/. The header contains the *what*,
+not the *how*.
+
+A 207-line mergeSort module with 14 theorems reduces to 7 public theorems
+in the header. The other 7 are helpers (`min_all_merge`, `merge_perm`,
+`timeMergeSortRec_le`) that a consumer never invokes directly.
+
+### 3. Signatures (when needed)
+
+`Signature` is useful when theorems don't fully cover a function — it
+tells the reader "this exists and has this type" even when behavior isn't
+fully specified. Once theorems cover every case, the Signature is
+redundant.
+
+### What NOT to put in a header
+
+- Proof bodies (they go in Proofs/)
+- Implementation helpers (they go in Code/)
+- Internal lemmas used only by other proofs
+- Test code (it goes in Tests/)
+
+### Sizing rule of thumb
+
+A good header is roughly **2 lines per public theorem** (the signature
++ a one-line comment) plus **1-2 lines per vocabulary concept**. A module
+with 7 theorems and 5 vocabulary concepts → ~20 lines. The original
+source might be 200+ lines.
+
+## Vocabulary as shared infrastructure
+
+The Defs/ directory isn't just "definitions used by theorems" — it's
+the **shared vocabulary** that makes headers across modules mutually
+intelligible.
+
+Examples from this project:
+- `StrongOrd` (Ordering) → used by Algorithm, Map, Set
+- `IsSorted`, `IsPermutation` (Sort) → would be shared by any sorting module
+- `mem`, `subset` (Interval) → used by Core, Arith, Lattice
+- `HappensBefore` (Concurrency) → used by every concurrency pattern
+
+The progression: English comments → Lean definitions → shared Defs/
+vocabulary → reusable domain language. Each step makes future headers
+cheaper and more precise. Investing in good vocabulary definitions is
+the highest-leverage work in a formalization project.
+
 ## Lessons for other formalization projects
 
 1. **Start with the easy modules** to establish patterns. Pair and Optional
@@ -209,14 +280,20 @@ The enforcement is structural (Lean's import system), not a custom macro.
 
 3. **The header IS the spec**. If a reader (human or LLM) can't understand
    what a module provides by reading only the header, the header is
-   incomplete. Proofs and code are implementation details. Vocabulary
-   definitions that appear in theorem types belong in the header (or in
-   Defs/ which the header imports).
+   incomplete. Proofs and code are implementation details.
 
-4. **Parallel agents work when the architecture is right**. Levelized file
+4. **Separate public from internal theorems**. Not every theorem belongs
+   in the header. Internal lemmas (stepping stones to the public results)
+   stay in Proofs/. A 14-theorem module might have only 7 public theorems.
+
+5. **Parallel agents work when the architecture is right**. Levelized file
    structure enables embarrassingly parallel development. Each module is
    independent until you choose to wire up cross-module dependencies.
 
-5. **Formalization finds real issues**. The eq-transitivity discovery
+6. **Formalization finds real issues**. The eq-transitivity discovery
    wasn't something we were looking for — it fell out of trying to prove
    the Ordering laws. English specs hide these gaps.
+
+7. **Vocabulary is the highest-leverage investment**. Defining `IsSorted`,
+   `HappensBefore`, `StrongOrd` well means every future header is
+   cheaper. The domain language amortizes across the entire library.
