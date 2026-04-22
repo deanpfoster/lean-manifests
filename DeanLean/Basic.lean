@@ -46,5 +46,12 @@ macro "TestedConjecture " n:ident " : " t:term : command => do
 macro "UnprovenConjecture " n:ident " : " t:term : command =>
   `(theorem $n : $t := by sorry)
 
+open Lean in
+macro "DerivedConjecture " n:ident " : " t:term : command => do
+  let derivationName := Lean.mkIdent (n.getId.appendAfter "_derivation")
+  `(set_option linter.unusedVariables false in
+    noncomputable def _dc_check := $derivationName
+    theorem $n : $t := by sorry)
+
 macro "FastHeader " n:ident " : " t:term : command =>
   `(axiom $n : $t)
