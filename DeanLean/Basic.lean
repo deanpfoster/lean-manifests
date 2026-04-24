@@ -1,5 +1,13 @@
 import Lean
 
+/-- When true, ProvenTheorem emits axioms instead of looking up proofs.
+    Headers don't need to import Proofs/ files → no cascade on proof changes.
+    Set via: `set_option levelized.fast true` or Lake `-Klevelized.fast=true` -/
+register_option levelized.fast : Bool := {
+  defValue := false
+  descr := "Fast mode: ProvenTheorem emits axioms, skipping proof lookup"
+}
+
 open Lean in
 macro "Wrap " n:ident " := " e:term : command => do
   `(noncomputable def $n := $e)
@@ -33,21 +41,29 @@ elab "PartialSignature " n:ident " : " t:term : command => do
 
 open Lean Elab Command in
 elab "ProvenTheorem " n:ident " : " t:term : command => do
-  let name := n.getId
-  let proofName := name.appendAfter "_proof"
-  let derivationName := name.appendAfter "_derivation"
-  let env ← getEnv
-  let ns ← getCurrNamespace
-  let hasProof := (env.find? (ns ++ proofName)).isSome || (env.find? proofName).isSome
-  let hasDeriv := (env.find? (ns ++ derivationName)).isSome || (env.find? derivationName).isSome
-  if hasProof then
-    let rid := Lean.mkIdent proofName
-    elabCommand (← `(theorem $n : $t := $rid))
-  else if hasDeriv then
-    let rid := Lean.mkIdent derivationName
-    elabCommand (← `(theorem $n : $t := $rid))
+  let fast := levelized.fast.get (← getOptions)
+  if fast then
+    -- Fast mode: axiom only. Header doesn't import Proofs.
+    -- Verification happens in Verify/ files (CI-only).
+    elabCommand (← `(axiom $n : $t))
   else
-    throwError s!"ProvenTheorem {name}: neither '{proofName}' nor '{derivationName}' found"
+    -- Full mode: look up _proof or _derivation.
+    -- Header must import Proofs for this to work.
+    let name := n.getId
+    let proofName := name.appendAfter "_proof"
+    let derivationName := name.appendAfter "_derivation"
+    let env ← getEnv
+    let ns ← getCurrNamespace
+    let hasProof := (env.find? (ns ++ proofName)).isSome || (env.find? proofName).isSome
+    let hasDeriv := (env.find? (ns ++ derivationName)).isSome || (env.find? derivationName).isSome
+    if hasProof then
+      let rid := Lean.mkIdent proofName
+      elabCommand (← `(theorem $n : $t := $rid))
+    else if hasDeriv then
+      let rid := Lean.mkIdent derivationName
+      elabCommand (← `(theorem $n : $t := $rid))
+    else
+      throwError s!"ProvenTheorem {name}: neither '{proofName}' nor '{derivationName}' found"
 
 open Lean in
 macro "TestedConjecture " n:ident " : " t:term : command => do
@@ -95,6 +111,38 @@ elab "DerivedConjecture " n:ident " : " t:term : command => do
 
 macro "FastHeader " n:ident " : " t:term : command =>
   `(axiom $n : $t)
+
+-- VerifyAxiom: confirm a fast-mode axiom has a matching proof (CI-only)
+open Lean Elab Command in
+elab "VerifyAxiom " n:ident " : " t:term : command => do
+  let name := n.getId
+  let proofName := name.appendAfter "_proof"
+  let derivationName := name.appendAfter "_derivation"
+  let env ← getEnv
+  let ns ← getCurrNamespace
+  -- Search with namespace prefix, without, and with all open namespaces
+  let scopes := (← getOpenDecls).filterMap fun d => match d with
+    | .simple ns _ => some ns
+    | _ => none
+  let findName (suffix : Lean.Name) : Bool :=
+    (env.find? (ns ++ suffix)).isSome || (env.find? suffix).isSome ||
+    scopes.any fun s => (env.find? (s ++ suffix)).isSome
+  let hasProof := findName proofName
+  let hasDeriv := findName derivationName
+  if hasProof then
+    let rid := Lean.mkIdent proofName
+    elabCommand (← `(
+      set_option linter.unusedVariables false in
+      noncomputable example : $t := $rid))
+    logInfo m!"VerifyAxiom {name}: ✓ matched by {proofName}"
+  else if hasDeriv then
+    let rid := Lean.mkIdent derivationName
+    elabCommand (← `(
+      set_option linter.unusedVariables false in
+      noncomputable example : $t := $rid))
+    logInfo m!"VerifyAxiom {name}: ✓ matched by {derivationName}"
+  else
+    throwError s!"VerifyAxiom {name}: ✗ neither '{proofName}' nor '{derivationName}' found — AXIOM UNVERIFIED"
 
 open Lean Elab Command in
 elab "ExternalTheorem " n:ident " := " src:term " : " t:term : command => do
