@@ -124,8 +124,17 @@ Functions: `cppMin`, `cppMax`, `cppClamp`, `minElement`, `maxElement`, `isSorted
 ## Macro Reference
 
 - `Signature Cpp.Foo.bar : T` — compiler-checks function exists with that type
-- `ProvenTheorem foo : T` — expands to `theorem foo : T := foo_proof` (must exist)
+- `ProvenTheorem foo : T` — looks for `foo_proof` or `foo_derivation` (must exist)
+- `DerivedConjecture foo : T` — looks for `foo_derivation`, auto-reports sorry dependencies
 - `TestedConjecture foo : T` — requires `foo_test` def in scope, then sorry
 - `UnprovenConjecture foo : T` — bare sorry, no witness
 - `Wrap foo_proof := @Some.External.name` — alias for naming convention bridge
 - `FastHeader foo : T` — axiom, for breaking recompilation cascades
+- `VerifyAxiom foo : T` — CI-only: confirms fast-mode axiom matches real proof
+- `ExternalTheorem foo := @Lib.name : T` — wraps existing library theorem
+- `Vocabulary foo := @Lib.name` — define-or-verify for Defs files
+
+Evidence hierarchy (weakest → strongest):
+  Signature → UnprovenConjecture → TestedConjecture → DerivedConjecture → ProvenTheorem
+
+Fast mode: `set_option levelized.fast true` makes ProvenTheorem emit axioms.

@@ -168,6 +168,19 @@ Proofs can change without affecting the header's meaning. But the header
 can see everything in Code — no enforcement that theorems only reference
 "vocabulary" types. A sneaky definition in Code could leak into a theorem.
 
+### Stage 2.5: Organized (definitions first, proofs second)
+
+Within each file, move all definitions (structure, inductive, class, def,
+abbrev) to the top, and all proofs (theorem, lemma) to the bottom.
+Same file, same imports, same behavior — just reordered.
+
+This is the safe checkpoint for an intrusive migration: pure reorder,
+easy diff to review. It also reveals which definitions are vocabulary
+(they're the ones at the top) and which are internal helpers.
+
+For a PR to an existing codebase, Stage 2.5 is PR #1 (reorganize),
+and Stage 3 is PR #2 (split). Each is independently reviewable.
+
 ### Stage 3: Enforced (full vocabulary control)
 
 ```
@@ -193,8 +206,10 @@ The enforcement is structural (Lean's import system), not a custom macro.
 
 - **1 → 2**: When the file gets long, or when you want proof changes to
   stop triggering recompilation of consumers.
-- **2 → 3**: When you want to guarantee that the header is self-contained —
-  that a reader never needs to open Code or Proofs to understand a theorem.
+- **2 → 2.5**: When preparing for a PR or wanting better readability.
+  Pure reorder — safe, reviewable, no behavioral change.
+- **2.5 → 3**: Cut the top section (definitions) into Defs/, add one import.
+  Mechanical after 2.5 — the hard thinking was already done.
   Run `generate_exports.sh` after adding theorems to the header.
 
 ## What goes in a header
