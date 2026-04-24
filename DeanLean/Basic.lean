@@ -65,12 +65,30 @@ elab "ProvenTheorem " n:ident " : " t:term : command => do
     else
       throwError s!"ProvenTheorem {name}: neither '{proofName}' nor '{derivationName}' found"
 
-open Lean in
-macro "TestedConjecture " n:ident " : " t:term : command => do
-  let testName := Lean.mkIdent (n.getId.appendAfter "_test")
-  `(set_option linter.unusedVariables false in
-    noncomputable def _tc_check := $testName
-    theorem $n : $t := by sorry)
+-- TestedConjecture: requires foo_test. Warns if test looks vacuous.
+open Lean Elab Command in
+elab "TestedConjecture " n:ident " : " t:term : command => do
+  let name := n.getId
+  let ns ← getCurrNamespace
+  let testId := name.appendAfter "_test"
+  let testName := Lean.mkIdent testId
+  -- Check test exists
+  elabCommand (← `(
+    set_option linter.unusedVariables false in
+    noncomputable def _tc_check := $testName))
+  -- Check for vacuous truth indicators
+  let env ← getEnv
+  let fullTestName := ns ++ testId
+  let info? := env.find? fullTestName |>.orElse fun _ => env.find? testId
+  match info? with
+  | some info =>
+    let usedConsts := info.getUsedConstantsAsSet
+    let vacuousIndicators := #[``absurd, ``False.elim, ``Not.elim, ``False.rec]
+    let hasVacuous := vacuousIndicators.any fun c => usedConsts.contains c
+    if hasVacuous then
+      logWarning m!"TestedConjecture {name}: ⚠ test witness may be vacuous (uses absurd/False.elim). Consider providing a positive test where the precondition is satisfied."
+  | none => pure ()
+  elabCommand (← `(theorem $n : $t := by sorry))
 
 macro "UnprovenConjecture " n:ident " : " t:term : command =>
   `(theorem $n : $t := by sorry)
