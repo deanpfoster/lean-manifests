@@ -109,6 +109,57 @@ elab "DerivedConjecture " n:ident " : " t:term : command => do
       logInfo m!"DerivedConjecture {name} depends on: {sorryDeps}"
   elabCommand (← `(theorem $n : $t := by sorry))
 
+-- FractionalTheorem: explicit decomposition with proof coverage tracking
+-- Shows which lemmas are proven vs tested vs unproven
+open Lean Elab Command in
+elab "FractionalTheorem " n:ident " : " t:term " from " deps:ident,+ : command => do
+  let name := n.getId
+  let ns ← getCurrNamespace
+  let derivationId := name.appendAfter "_derivation"
+  let derivationName := Lean.mkIdent derivationId
+  -- Check derivation exists
+  elabCommand (← `(
+    set_option linter.unusedVariables false in
+    noncomputable def _ft_check := $derivationName))
+  -- Analyze each dependency
+  let env ← getEnv
+  let scopes := (← getOpenDecls).filterMap fun d => match d with
+    | .simple ns _ => some ns
+    | _ => none
+  let findConst (name : Lean.Name) : Option Lean.ConstantInfo :=
+    (env.find? (ns ++ name)) |>.orElse fun _ =>
+    (env.find? name) |>.orElse fun _ =>
+    scopes.findSome? fun s => env.find? (s ++ name)
+  let mut proven := 0
+  let mut tested := 0
+  let mut unproven := 0
+  let mut details : Array String := #[]
+  for dep in deps.getElems do
+    let depName := dep.getId
+    match findConst depName with
+    | some info =>
+      if info.getUsedConstantsAsSet.contains ``sorryAx then
+        -- Has sorry — is it tested or unproven?
+        let testName := depName.appendAfter "_test"
+        if (findConst testName).isSome then
+          tested := tested + 1
+          details := details.push s!"  {depName}: tested ◐"
+        else
+          unproven := unproven + 1
+          details := details.push s!"  {depName}: unproven ○"
+      else
+        proven := proven + 1
+        details := details.push s!"  {depName}: proven ●"
+    | none =>
+      unproven := unproven + 1
+      details := details.push s!"  {depName}: NOT FOUND ✗"
+  let total := proven + tested + unproven
+  let pct := if total > 0 then proven * 100 / total else 0
+  logInfo m!"FractionalTheorem {name}: {proven}/{total} proven ({pct}%)\n{"\n".intercalate details.toList}"
+  if proven == total then
+    logInfo m!"  → All lemmas proven! Consider promoting to ProvenTheorem."
+  elabCommand (← `(theorem $n : $t := by sorry))
+
 macro "FastHeader " n:ident " : " t:term : command =>
   `(axiom $n : $t)
 
