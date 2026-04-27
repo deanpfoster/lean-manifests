@@ -1,9 +1,11 @@
 import DeanLean.Basic
+import DeanLean.Tests.ManifestTests
 
 /-! # Manifest for the Manifest System
 
   Self-referential: this file specifies what our macro system promises.
-  Each claim is testable. When all are ProvenTheorem, the system is certified.
+  Tests live in Tests/ManifestTests.lean. Each _test witness is imported
+  and referenced by TestedConjecture.
 
   ## Vocabulary
 
@@ -24,32 +26,36 @@ import DeanLean.Basic
   ● ProvenTheorem         — no sorry anywhere
 -/
 
+open ProvenTheoremTests TestedConjectureTests DecomposedConjectureTests
+     DerivedConjectureTests SignatureTests RedundancyTests VerifyAxiomTests
+     OrderingTests
+
 -- ════════════════════════════════════════════════════════════
 -- § ProvenTheorem behavior
 -- ════════════════════════════════════════════════════════════
 
 -- Core contract: ProvenTheorem creates a theorem from foo_proof
-UnprovenConjecture ProvenTheorem_creates_theorem :
+TestedConjecture ProvenTheorem_creates_theorem :
     True -- "ProvenTheorem foo : T creates theorem foo : T := foo_proof"
 
--- Fails without proof
+-- Fails without proof (tested manually — can't test "fails to compile" from inside)
 UnprovenConjecture ProvenTheorem_fails_without_proof :
     True -- "ProvenTheorem foo : T fails if neither foo_proof nor foo_derivation exists"
 
 -- Accepts _derivation as alternative to _proof
-UnprovenConjecture ProvenTheorem_accepts_derivation :
+TestedConjecture ProvenTheorem_accepts_derivation :
     True -- "ProvenTheorem foo : T succeeds if foo_derivation exists (no rename needed)"
 
--- Type mismatch fails
+-- Type mismatch fails (tested manually — can't test compilation failure from inside)
 UnprovenConjecture ProvenTheorem_type_mismatch_fails :
     True -- "ProvenTheorem foo : T fails if foo_proof has type U ≠ T"
 
 -- Redundant: silently type-checks if name already exists (same namespace)
-UnprovenConjecture ProvenTheorem_redundant_same_namespace :
+TestedConjecture ProvenTheorem_redundant_same_namespace :
     True -- "ProvenTheorem foo : T succeeds (type-check only) if foo already defined"
 
 -- Fast mode: emits axiom instead of looking up proof
-UnprovenConjecture ProvenTheorem_fast_mode_axiom :
+TestedConjecture ProvenTheorem_fast_mode_axiom :
     True -- "With levelized.fast=true, ProvenTheorem foo : T emits axiom foo : T"
 
 -- ════════════════════════════════════════════════════════════
@@ -57,19 +63,19 @@ UnprovenConjecture ProvenTheorem_fast_mode_axiom :
 -- ════════════════════════════════════════════════════════════
 
 -- Core contract: requires foo_test
-UnprovenConjecture TestedConjecture_requires_test :
+TestedConjecture TestedConjecture_requires_test :
     True -- "TestedConjecture foo : T fails if foo_test doesn't exist"
 
 -- Creates sorry theorem
-UnprovenConjecture TestedConjecture_creates_sorry :
+TestedConjecture TestedConjecture_creates_sorry :
     True -- "TestedConjecture foo : T creates theorem foo : T := by sorry"
 
 -- Warns on vacuous test
-UnprovenConjecture TestedConjecture_warns_vacuous :
+TestedConjecture TestedConjecture_warns_vacuous :
     True -- "Warns if foo_test uses absurd/False.elim/Not.elim/False.rec"
 
 -- Vacuous warning suppressible
-UnprovenConjecture TestedConjecture_classical_suppression :
+TestedConjecture TestedConjecture_classical_suppression :
     True -- "No warning if foo_test_is_classical exists"
 
 -- ════════════════════════════════════════════════════════════
@@ -77,10 +83,10 @@ UnprovenConjecture TestedConjecture_classical_suppression :
 -- ════════════════════════════════════════════════════════════
 
 -- Core contract: requires foo_derivation AND all sorry deps tested
-UnprovenConjecture DecomposedConjecture_requires_derivation :
+TestedConjecture DecomposedConjecture_requires_derivation :
     True -- "Fails if foo_derivation doesn't exist"
 
-UnprovenConjecture DecomposedConjecture_requires_all_tested :
+TestedConjecture DecomposedConjecture_requires_all_tested :
     True -- "Fails if any sorry dep of foo_derivation lacks _test"
 
 -- Strictly stronger than TestedConjecture
@@ -92,14 +98,14 @@ UnprovenConjecture DecomposedConjecture_stronger_than_tested :
 -- ════════════════════════════════════════════════════════════
 
 -- Core contract: requires foo_derivation, auto-reports sorry deps
-UnprovenConjecture DerivedConjecture_requires_derivation :
+TestedConjecture DerivedConjecture_requires_derivation :
     True -- "Fails if foo_derivation doesn't exist"
 
-UnprovenConjecture DerivedConjecture_auto_discovers_sorry :
+TestedConjecture DerivedConjecture_auto_discovers_sorry :
     True -- "Reports sorry deps via getUsedConstantsAsSet"
 
 UnprovenConjecture DerivedConjecture_reports_fraction :
-    True -- "Reports N/M theorem deps proven (P%)"
+    True -- "Reports N/M theorem deps proven (P%)" — tested but hard to verify from inside
 
 UnprovenConjecture DerivedConjecture_suggests_promotion :
     True -- "When 0 sorry deps, says 'consider promoting to ProvenTheorem'"
@@ -109,14 +115,14 @@ UnprovenConjecture DerivedConjecture_suggests_promotion :
 -- ════════════════════════════════════════════════════════════
 
 -- Checks function exists with stated type
-UnprovenConjecture Signature_checks_type :
+TestedConjecture Signature_checks_type :
     True -- "Signature foo : T fails if foo exists with type U ≠ T"
 
 -- Creates axiom if function doesn't exist
-UnprovenConjecture Signature_creates_axiom :
+TestedConjecture Signature_creates_axiom :
     True -- "Signature foo : T creates axiom foo : T if foo not found"
 
--- Rejects partial functions
+-- Rejects partial functions (tested manually)
 UnprovenConjecture Signature_rejects_partial :
     True -- "Signature foo : T fails if foo is partial (use PartialSignature)"
 
@@ -125,10 +131,10 @@ UnprovenConjecture Signature_rejects_partial :
 -- ════════════════════════════════════════════════════════════
 
 -- Same namespace: silently verifies
-UnprovenConjecture redundancy_same_namespace :
+TestedConjecture redundancy_same_namespace :
     True -- "Any evidence macro with an existing name (same ns) type-checks silently"
 
--- Type mismatch in redundant manifest: fails
+-- Type mismatch in redundant manifest: fails (tested manually)
 UnprovenConjecture redundancy_type_mismatch_fails :
     True -- "Redundant declaration with wrong type fails to compile"
 
@@ -140,7 +146,7 @@ UnprovenConjecture redundancy_open_namespace :
 -- § VerifyAxiom behavior
 -- ════════════════════════════════════════════════════════════
 
-UnprovenConjecture VerifyAxiom_confirms_match :
+TestedConjecture VerifyAxiom_confirms_match :
     True -- "VerifyAxiom foo : T succeeds with info message if foo_proof : T exists"
 
 UnprovenConjecture VerifyAxiom_fails_without_proof :
@@ -151,9 +157,9 @@ UnprovenConjecture VerifyAxiom_fails_without_proof :
 -- ════════════════════════════════════════════════════════════
 
 -- The hierarchy is strictly ordered: each level requires everything below
-UnprovenConjecture hierarchy_strict_ordering :
+TestedConjecture hierarchy_strict_ordering :
     True -- "DecomposedConjecture ⊃ TestedConjecture ⊃ UnprovenConjecture"
 
 -- Promotion never breaks: changing keyword upward always compiles if evidence exists
-UnprovenConjecture promotion_monotonic :
+TestedConjecture promotion_monotonic :
     True -- "If DerivedConjecture foo compiles, ProvenTheorem foo compiles when sorry=0"
