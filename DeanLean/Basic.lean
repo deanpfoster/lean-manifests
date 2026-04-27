@@ -41,19 +41,22 @@ elab "PartialSignature " n:ident " : " t:term : command => do
 
 open Lean Elab Command in
 elab "ProvenTheorem " n:ident " : " t:term : command => do
+  let name := n.getId
+  let ns ← getCurrNamespace
+  let env ← getEnv
+  let fullName := ns ++ name
+  -- If name already exists, just verify the type matches (redundant manifest)
+  if (env.find? fullName).isSome || (env.find? name).isSome then
+    elabCommand (← `(
+      set_option linter.unusedVariables false in
+      noncomputable example : $t := $n))
+    return
   let fast := levelized.fast.get (← getOptions)
   if fast then
-    -- Fast mode: axiom only. Header doesn't import Proofs.
-    -- Verification happens in Verify/ files (CI-only).
     elabCommand (← `(axiom $n : $t))
   else
-    -- Full mode: look up _proof or _derivation.
-    -- Header must import Proofs for this to work.
-    let name := n.getId
     let proofName := name.appendAfter "_proof"
     let derivationName := name.appendAfter "_derivation"
-    let env ← getEnv
-    let ns ← getCurrNamespace
     let hasProof := (env.find? (ns ++ proofName)).isSome || (env.find? proofName).isSome
     let hasDeriv := (env.find? (ns ++ derivationName)).isSome || (env.find? derivationName).isSome
     if hasProof then
@@ -65,9 +68,25 @@ elab "ProvenTheorem " n:ident " : " t:term : command => do
     else
       throwError s!"ProvenTheorem {name}: neither '{proofName}' nor '{derivationName}' found"
 
+-- Helper: check if name already exists, verify type if so (for redundant manifests)
+open Lean Elab Command in
+private def checkRedundant (n : Lean.TSyntax `ident) (t : Lean.TSyntax `term) :
+    CommandElabM Bool := do
+  let name := n.getId
+  let ns ← getCurrNamespace
+  let env ← getEnv
+  let fullName := ns ++ name
+  if (env.find? fullName).isSome || (env.find? name).isSome then
+    elabCommand (← `(
+      set_option linter.unusedVariables false in
+      noncomputable example : $t := $n))
+    return true
+  return false
+
 -- TestedConjecture: requires foo_test. Warns if test looks vacuous.
 open Lean Elab Command in
 elab "TestedConjecture " n:ident " : " t:term : command => do
+  if (← checkRedundant n t) then return
   let name := n.getId
   let ns ← getCurrNamespace
   let testId := name.appendAfter "_test"
@@ -95,8 +114,10 @@ elab "TestedConjecture " n:ident " : " t:term : command => do
   | none => pure ()
   elabCommand (← `(theorem $n : $t := by sorry))
 
-macro "UnprovenConjecture " n:ident " : " t:term : command =>
-  `(theorem $n : $t := by sorry)
+open Lean Elab Command in
+elab "UnprovenConjecture " n:ident " : " t:term : command => do
+  if (← checkRedundant n t) then return
+  elabCommand (← `(theorem $n : $t := by sorry))
 
 private def findSorryDeps (env : Lean.Environment) (info : Lean.ConstantInfo) : Array Lean.Name := Id.run do
   let consts := info.getUsedConstantsAsSet
@@ -112,6 +133,7 @@ private def findSorryDeps (env : Lean.Environment) (info : Lean.ConstantInfo) : 
 
 open Lean Elab Command in
 elab "DerivedConjecture " n:ident " : " t:term : command => do
+  if (← checkRedundant n t) then return
   let name := n.getId
   let ns ← getCurrNamespace
   let derivationId := name.appendAfter "_derivation"
@@ -151,6 +173,7 @@ elab "DerivedConjecture " n:ident " : " t:term : command => do
 -- The derivation is a real proof; the pieces are lemmas that may be sorry but must have _test.
 open Lean Elab Command in
 elab "DecomposedConjecture " n:ident " : " t:term : command => do
+  if (← checkRedundant n t) then return
   let name := n.getId
   let ns ← getCurrNamespace
   let derivationId := name.appendAfter "_derivation"
