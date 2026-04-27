@@ -82,40 +82,39 @@ def EvidenceOrderingInvariant (env : Environment) : Prop :=
 -- If elab_theorem_creates_thmInfo holds (Leo's claim),
 -- and real_proof_no_sorry holds (Leo's claim),
 -- then ProvenTheoremSpec holds (our claim).
+-- Derivation references Leo's named claims directly.
+-- DerivedConjecture auto-discovers these as sorry dependencies.
 theorem ProvenTheorem_is_correct_derivation :
-    -- Assuming Leo's claims:
-    (∀ (env env' : Environment) (n : Name) (t proof : Expr),
-      True → match env'.find? n with
-      | some (.thmInfo val) => val.type = t
-      | _ => False) →
-    (∀ (ci : ConstantInfo), True → ¬ ci.getUsedConstantsAsSet.contains ``sorryAx) →
-    -- Then our spec holds:
     ∀ (env : Environment) (n : Name) (t : Expr),
     ProvenTheoremSpec env n t := by
-  intro h_elab h_no_sorry env n t h_pre
-  -- The proof uses Leo's claims to establish our contract
-  sorry -- Real proof would unfold the definitions and apply h_elab, h_no_sorry
+  intro env n t h_pre
+  -- Step 1: By elab_theorem_creates_thmInfo, elaborating the theorem creates thmInfo
+  have h1 := elab_theorem_creates_thmInfo
+  -- Step 2: By real_proof_no_sorry, the real proof has no sorryAx
+  have h2 := real_proof_no_sorry
+  -- Step 3: By find_name_consistent, we get back what we added
+  have h3 := find_name_consistent
+  -- Combine to get ProvenTheoremSpec
+  sorry
 
--- If sorry_detected_in_constants holds (Leo's claim),
--- then TestedConjectureSpec holds (our claim).
 theorem TestedConjecture_is_correct_derivation :
-    (∀ (ci : ConstantInfo), True → ci.getUsedConstantsAsSet.contains ``sorryAx) →
     ∀ (env : Environment) (n : Name) (t : Expr),
     TestedConjectureSpec env n t := by
-  sorry -- Real proof: sorry theorem has sorryAx by Leo's claim
+  intro env n t h_pre
+  -- By elab_theorem_creates_thmInfo, elaborating creates thmInfo
+  have h1 := elab_theorem_creates_thmInfo
+  -- By sorry_detected_in_constants, sorry theorem has sorryAx
+  have h2 := sorry_detected_in_constants
+  sorry
 
--- The ordering invariant follows from both Leo claims together.
 theorem evidence_levels_are_distinguishable_derivation :
-    -- real proofs have no sorry
-    (∀ (ci : ConstantInfo), True → ¬ ci.getUsedConstantsAsSet.contains ``sorryAx) →
-    -- sorry theorems have sorry
-    (∀ (ci : ConstantInfo), True → ci.getUsedConstantsAsSet.contains ``sorryAx) →
-    -- therefore: the two are distinguishable
     ∀ (env : Environment), EvidenceOrderingInvariant env := by
-  intro h_no_sorry h_has_sorry env
-  -- This follows from: real proofs don't have sorry, sorry proofs do
-  -- The EvidenceOrderingInvariant is trivially True in its current form
-  -- A stronger version would require tracking "created by" provenance
+  intro env
+  -- By real_proof_no_sorry: proven theorems lack sorryAx
+  have h1 := real_proof_no_sorry
+  -- By sorry_detected_in_constants: sorry theorems have sorryAx
+  have h2 := sorry_detected_in_constants
+  -- Therefore the two are distinguishable
   sorry
 
 -- ════════════════════════════════════════════════════════════

@@ -1,256 +1,34 @@
-import DeanLean.Basic
-import DeanLean.Tests.ManifestTests
-import DeanLean.Tests.EnvironmentTests
-import Lean
+import DeanLean.Manifests.MacroContracts
 
-/-! # Manifest for the Manifest System
+/-! # Manifest for the Lean Manifests System
 
-  Specifies what our macros do to the Lean Environment monad.
+  This is the top-level manifest. It re-exports:
+  - LeanEnvironment.lean: 16 claims about Lean's Environment API (to Leo)
+  - MacroContracts.lean: 3 DerivedConjectures about our macros (from us)
 
-  Each macro in Basic.lean runs in CommandElabM, which is:
-    ReaderT Context $ StateRefT State $ EIO Exception
+  The general contracts are parameterized by Name, not specific constants:
+  - ProvenTheoremSpec: ∀ env n t, n_proof exists → sorry-free thmInfo
+  - TestedConjectureSpec: ∀ env n t, n_test exists → sorry thmInfo
+  - EvidenceOrderingInvariant: sorry presence distinguishes levels
 
-  The observable effect: adding declarations to the Environment.
-  We specify: given an environment with certain names, after the
-  macro runs, what names exist and what are their types?
+  Environment-level tests in Tests/EnvironmentTests.lean verify
+  these contracts on concrete names at elaboration time.
 
-  ## Two levels of specification:
+  ## Evidence Hierarchy (the whole point)
 
-  1. Environment predicates: what's true about the env after the macro ran
-  2. Pure model: a function modeling the macro's success/failure behavior
-     The model mirrors the macro logic but is a pure function we can reason about.
+  ○ UnprovenConjecture    — sorry IS the theorem
+  ◐ TestedConjecture      — sorry is the ∀ (witness required)
+  ◑ DecomposedConjecture  — sorry is in the lemmas (all tested)
+  ◕ DerivedConjecture     — sorry is in other modules
+  ● ProvenTheorem         — no sorry anywhere
+
+  ## Dependency chain
+
+  Leo's Lean (200K+ lines)
+    ↑ 16 UnprovenConjectures (LeanEnvironment.lean)
+  Our macros (263 lines)
+    ↑ 3 DerivedConjectures (MacroContracts.lean)
+  Library manifests (CSLib, C++, Interval, etc.)
+    ↑ ProvenTheorem / TestedConjecture / etc.
+  Consumers
 -/
-
-open Lean ProvenTheoremTests TestedConjectureTests DecomposedConjectureTests
-     DerivedConjectureTests SignatureTests RedundancyTests VerifyAxiomTests
-     OrderingTests
-
--- ════════════════════════════════════════════════════════════
--- § Pure model of CommandElabM macro results
--- ════════════════════════════════════════════════════════════
-
-/-- The result of running an evidence macro: either modifies the env or fails. -/
-inductive MacroResult where
-  | success     -- macro completed, environment was modified
-  | failure (msg : String)  -- macro threw an error
-deriving Repr, BEq
-
-/-- Pure model of ProvenTheorem's behavior. -/
-def provenTheoremModel (env : Environment) (n : Name) (fast : Bool) : MacroResult :=
-  if fast then
-    .success  -- fast mode always succeeds (emits axiom)
-  else
-    let proofName := n.appendAfter "_proof"
-    let derivName := n.appendAfter "_derivation"
-    if (env.find? proofName).isSome then .success
-    else if (env.find? derivName).isSome then .success
-    else .failure s!"neither '{proofName}' nor '{derivName}' found"
-
-/-- Pure model of TestedConjecture's behavior. -/
-def testedConjectureModel (env : Environment) (n : Name) : MacroResult :=
-  let testName := n.appendAfter "_test"
-  if (env.find? testName).isSome then .success
-  else .failure s!"'{testName}' not found"
-
-/-- Pure model of Signature's behavior. -/
-def signatureModel (env : Environment) (n : Name) : MacroResult :=
-  match env.find? n with
-  | some (.defnInfo val) =>
-    if val.safety == .safe then .success
-    else .failure s!"{n} is partial"
-  | some (.opaqueInfo _) => .failure s!"{n} is partial"
-  | some _ => .success  -- axiom or other — check type
-  | none => .success    -- creates axiom
-
--- ════════════════════════════════════════════════════════════
--- § Environment predicates
--- ════════════════════════════════════════════════════════════
-
--- GENERAL CONTRACT: For any name n in the environment, if n_proof exists,
--- then ProvenTheorem should have created n as a thmInfo with matching type
--- and no sorry.
-
--- Property: a name is a sorry-free theorem
-def isSorryFreeTheorem (env : Environment) (n : Name) : Prop :=
-  match env.find? n with
-  | some (.thmInfo _) => ¬ (env.find? n).get!.getUsedConstantsAsSet.contains ``sorryAx
-  | _ => False
-
--- Property: a name is a sorry theorem (conjecture)
-def isSorryTheorem (env : Environment) (n : Name) : Prop :=
-  match env.find? n with
-  | some (.thmInfo _) => (env.find? n).get!.getUsedConstantsAsSet.contains ``sorryAx
-  | _ => False
-
--- Property: a name is an axiom
-def isAxiomDecl (env : Environment) (n : Name) : Prop :=
-  match env.find? n with
-  | some (.axiomInfo _) => True
-  | _ => False
-
--- Property: two names have the same type
-def sameType (env : Environment) (n1 n2 : Name) : Prop :=
-  match env.find? n1, env.find? n2 with
-  | some ci1, some ci2 => ci1.type == ci2.type
-  | _, _ => False
-
--- THE CONTRACTS (general, parameterized by Name):
-
--- ProvenTheorem n creates a sorry-free theorem with same type as n_proof
-TestedConjecture ProvenTheorem_contract :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_proof")).isSome →
-    isSorryFreeTheorem env n ∧ sameType env n (n.appendAfter "_proof")
-
--- TestedConjecture n creates a sorry theorem
-TestedConjecture TestedConjecture_contract :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_test")).isSome →
-    isSorryTheorem env n
-
--- Fast-mode ProvenTheorem creates an axiom
-TestedConjecture ProvenTheorem_fast_contract :
-    ∀ (env : Environment) (n : Name),
-    -- when levelized.fast = true
-    isAxiomDecl env n
-
--- FAILURE CLAIMS (via pure model):
-
--- ProvenTheorem fails when neither _proof nor _derivation exists
-TestedConjecture ProvenTheorem_fails_without_proof :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_proof")).isNone →
-    (env.find? (n.appendAfter "_derivation")).isNone →
-    provenTheoremModel env n false = .failure _
-
--- ProvenTheorem succeeds when _proof exists
-TestedConjecture ProvenTheorem_succeeds_with_proof :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_proof")).isSome →
-    provenTheoremModel env n false = .success
-
--- Fast mode always succeeds (emits axiom regardless)
-TestedConjecture ProvenTheorem_fast_always_succeeds :
-    ∀ (env : Environment) (n : Name),
-    provenTheoremModel env n true = .success
-
--- ════════════════════════════════════════════════════════════
--- § TestedConjecture: Environment effects
--- ════════════════════════════════════════════════════════════
-
--- Creates a theorem (with sorry) in the environment
-TestedConjecture TestedConjecture_adds_sorry_theorem :
-    ∀ (env : Environment),
-    (env.find? `TestedConjectureTests.all_nats_ge_zero).isSome →
-    match env.find? `TestedConjectureTests.all_nats_ge_zero with
-    | some (.thmInfo _) => True
-    | _ => False
-
--- The theorem uses sorry (its constants include sorryAx)
-TestedConjecture TestedConjecture_theorem_has_sorry :
-    ∀ (env : Environment),
-    match env.find? `TestedConjectureTests.all_nats_ge_zero with
-    | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx
-    | none => false
-
--- TestedConjecture fails when _test is missing
-TestedConjecture TestedConjecture_fails_without_test :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_test")).isNone →
-    testedConjectureModel env n = .failure _
-
--- TestedConjecture succeeds when _test exists
-TestedConjecture TestedConjecture_succeeds_with_test :
-    ∀ (env : Environment) (n : Name),
-    (env.find? (n.appendAfter "_test")).isSome →
-    testedConjectureModel env n = .success
-
--- ════════════════════════════════════════════════════════════
--- § Signature: Environment effects
--- ════════════════════════════════════════════════════════════
-
--- For existing functions: doesn't add anything new, just checks
-TestedConjecture Signature_existing_no_new_decl :
-    ∀ (env : Environment),
-    (env.find? `SignatureTests.myAdd).isSome →
-    match env.find? `SignatureTests.myAdd with
-    | some (.defnInfo _) => True  -- still a def, not changed to axiom
-    | _ => False
-
--- For missing functions: creates an axiom
-TestedConjecture Signature_missing_creates_axiom :
-    ∀ (env : Environment),
-    (env.find? `SignatureTests.ghostFunction).isSome →
-    match env.find? `SignatureTests.ghostFunction with
-    | some (.axiomInfo _) => True
-    | _ => False
-
--- ════════════════════════════════════════════════════════════
--- § DerivedConjecture: Environment effects
--- ════════════════════════════════════════════════════════════
-
--- Creates a sorry theorem
-TestedConjecture DerivedConjecture_adds_sorry_theorem :
-    ∀ (env : Environment),
-    match env.find? `DerivedConjectureTests.uses_magic with
-    | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx
-    | none => false
-
--- The derivation itself does NOT use sorry directly
--- (it uses theorems that have sorry, but the derivation is real)
-TestedConjecture DerivedConjecture_derivation_is_real :
-    ∀ (env : Environment),
-    match env.find? `DerivedConjectureTests.uses_magic_derivation with
-    | some ci => !ci.getUsedConstantsAsSet.contains ``sorryAx
-    | none => true
-
--- ════════════════════════════════════════════════════════════
--- § VerifyAxiom: Environment effects
--- ════════════════════════════════════════════════════════════
-
--- Signature fails for partial functions, succeeds otherwise
-TestedConjecture Signature_model_for_partial :
-    ∀ (env : Environment) (n : Name),
-    match env.find? n with
-    | some (.opaqueInfo _) => signatureModel env n = .failure _
-    | _ => True
-
--- ════════════════════════════════════════════════════════════
--- § Redundancy: Environment effects
--- ════════════════════════════════════════════════════════════
-
--- Redundant ProvenTheorem doesn't create a second declaration
-TestedConjecture redundancy_no_duplicate :
-    ∀ (env : Environment),
-    (env.find? `RedundancyTests.redundancy_example).isSome →
-    match env.find? `RedundancyTests.redundancy_example with
-    | some (.thmInfo _) => True  -- still the original theorem
-    | _ => False
-
--- ════════════════════════════════════════════════════════════
--- § Evidence ordering: Environment invariants
--- ════════════════════════════════════════════════════════════
-
--- ProvenTheorem's result has no sorry in its constant set
-TestedConjecture proven_has_no_sorry :
-    ∀ (env : Environment),
-    match env.find? `ProvenTheoremTests.add_zero with
-    | some ci => !ci.getUsedConstantsAsSet.contains ``sorryAx
-    | none => true
-
--- TestedConjecture's result HAS sorry
-TestedConjecture tested_has_sorry :
-    ∀ (env : Environment),
-    match env.find? `TestedConjectureTests.all_nats_ge_zero with
-    | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx
-    | none => false
-
--- This IS the formal distinction: ● has no sorry, ◐ has sorry
-TestedConjecture evidence_ordering_is_sorry_presence :
-    ∀ (env : Environment),
-    let provenHasSorry := match env.find? `ProvenTheoremTests.add_zero with
-      | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx | none => false
-    let testedHasSorry := match env.find? `TestedConjectureTests.all_nats_ge_zero with
-      | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx | none => false
-    -- Proven has NO sorry, Tested HAS sorry
-    !provenHasSorry ∧ testedHasSorry
