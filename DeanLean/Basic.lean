@@ -16,15 +16,22 @@ open Lean Elab Command in
 elab "Signature " n:ident " : " t:term : command => do
   let name := n.getId
   let env ← getEnv
-  match env.find? name with
+  let ns ← getCurrNamespace
+  let fullName := ns ++ name
+  match env.find? fullName |>.orElse fun _ => env.find? name with
   | some (.defnInfo val) =>
     if val.safety != .safe then
       throwError s!"{name} is partial/unsafe — use PartialSignature instead"
+    elabCommand (← `(section variable (_sig_check : $t := $(n)) end))
   | some (.opaqueInfo _) =>
     throwError s!"{name} is partial — use PartialSignature instead"
-  | some _ => throwError s!"{name} is not a function definition"
-  | none   => throwError s!"{name} not found in environment"
-  elabCommand (← `(section variable (_sig_check : $t := $(n)) end))
+  | some _ =>
+    -- Exists but not a def — could be an axiom from fast mode or previous Signature
+    elabCommand (← `(section variable (_sig_check : $t := $(n)) end))
+  | none =>
+    -- Doesn't exist yet — create as axiom (spec before implementation)
+    logInfo m!"Signature {name}: not yet implemented, creating specification"
+    elabCommand (← `(axiom $n : $t))
 
 open Lean Elab Command in
 elab "PartialSignature " n:ident " : " t:term : command => do
