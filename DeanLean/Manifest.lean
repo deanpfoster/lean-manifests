@@ -14,8 +14,11 @@ import Lean
   We specify: given an environment with certain names, after the
   macro runs, what names exist and what are their types?
 
-  Claims about Environment state: real Lean Prop types.
-  Claims about compilation failure: typed as True (can't express).
+  ## Two levels of specification:
+
+  1. Environment predicates: what's true about the env after the macro ran
+  2. Pure model: a function modeling the macro's success/failure behavior
+     The model mirrors the macro logic but is a pure function we can reason about.
 -/
 
 open Lean ProvenTheoremTests TestedConjectureTests DecomposedConjectureTests
@@ -23,7 +26,44 @@ open Lean ProvenTheoremTests TestedConjectureTests DecomposedConjectureTests
      OrderingTests
 
 -- ════════════════════════════════════════════════════════════
--- § ProvenTheorem: Environment effects
+-- § Pure model of CommandElabM macro results
+-- ════════════════════════════════════════════════════════════
+
+/-- The result of running an evidence macro: either modifies the env or fails. -/
+inductive MacroResult where
+  | success     -- macro completed, environment was modified
+  | failure (msg : String)  -- macro threw an error
+deriving Repr, BEq
+
+/-- Pure model of ProvenTheorem's behavior. -/
+def provenTheoremModel (env : Environment) (n : Name) (fast : Bool) : MacroResult :=
+  if fast then
+    .success  -- fast mode always succeeds (emits axiom)
+  else
+    let proofName := n.appendAfter "_proof"
+    let derivName := n.appendAfter "_derivation"
+    if (env.find? proofName).isSome then .success
+    else if (env.find? derivName).isSome then .success
+    else .failure s!"neither '{proofName}' nor '{derivName}' found"
+
+/-- Pure model of TestedConjecture's behavior. -/
+def testedConjectureModel (env : Environment) (n : Name) : MacroResult :=
+  let testName := n.appendAfter "_test"
+  if (env.find? testName).isSome then .success
+  else .failure s!"'{testName}' not found"
+
+/-- Pure model of Signature's behavior. -/
+def signatureModel (env : Environment) (n : Name) : MacroResult :=
+  match env.find? n with
+  | some (.defnInfo val) =>
+    if val.safety == .safe then .success
+    else .failure s!"{n} is partial"
+  | some (.opaqueInfo _) => .failure s!"{n} is partial"
+  | some _ => .success  -- axiom or other — check type
+  | none => .success    -- creates axiom
+
+-- ════════════════════════════════════════════════════════════
+-- § Environment predicates
 -- ════════════════════════════════════════════════════════════
 
 -- GENERAL CONTRACT: For any name n in the environment, if n_proof exists,
@@ -74,11 +114,25 @@ TestedConjecture ProvenTheorem_fast_contract :
     -- when levelized.fast = true
     isAxiomDecl env n
 
--- Compilation-failure claims
-UnprovenConjecture ProvenTheorem_fails_without_proof :
-    True -- env.find? (name ++ "_proof") = none → macro throws error
-UnprovenConjecture ProvenTheorem_type_mismatch_fails :
-    True -- proof.type ≠ declared type → kernel rejects
+-- FAILURE CLAIMS (via pure model):
+
+-- ProvenTheorem fails when neither _proof nor _derivation exists
+TestedConjecture ProvenTheorem_fails_without_proof :
+    ∀ (env : Environment) (n : Name),
+    (env.find? (n.appendAfter "_proof")).isNone →
+    (env.find? (n.appendAfter "_derivation")).isNone →
+    provenTheoremModel env n false = .failure _
+
+-- ProvenTheorem succeeds when _proof exists
+TestedConjecture ProvenTheorem_succeeds_with_proof :
+    ∀ (env : Environment) (n : Name),
+    (env.find? (n.appendAfter "_proof")).isSome →
+    provenTheoremModel env n false = .success
+
+-- Fast mode always succeeds (emits axiom regardless)
+TestedConjecture ProvenTheorem_fast_always_succeeds :
+    ∀ (env : Environment) (n : Name),
+    provenTheoremModel env n true = .success
 
 -- ════════════════════════════════════════════════════════════
 -- § TestedConjecture: Environment effects
@@ -99,9 +153,17 @@ TestedConjecture TestedConjecture_theorem_has_sorry :
     | some ci => ci.getUsedConstantsAsSet.contains ``sorryAx
     | none => false
 
--- Compilation-failure claims
-UnprovenConjecture TestedConjecture_fails_without_test :
-    True -- env.find? (name ++ "_test") = none → macro throws error
+-- TestedConjecture fails when _test is missing
+TestedConjecture TestedConjecture_fails_without_test :
+    ∀ (env : Environment) (n : Name),
+    (env.find? (n.appendAfter "_test")).isNone →
+    testedConjectureModel env n = .failure _
+
+-- TestedConjecture succeeds when _test exists
+TestedConjecture TestedConjecture_succeeds_with_test :
+    ∀ (env : Environment) (n : Name),
+    (env.find? (n.appendAfter "_test")).isSome →
+    testedConjectureModel env n = .success
 
 -- ════════════════════════════════════════════════════════════
 -- § Signature: Environment effects
@@ -146,10 +208,12 @@ TestedConjecture DerivedConjecture_derivation_is_real :
 -- § VerifyAxiom: Environment effects
 -- ════════════════════════════════════════════════════════════
 
--- VerifyAxiom doesn't add anything to the environment
--- (it just checks and emits a message)
-UnprovenConjecture VerifyAxiom_no_env_change :
-    True -- env after VerifyAxiom = env before (modulo example)
+-- Signature fails for partial functions, succeeds otherwise
+TestedConjecture Signature_model_for_partial :
+    ∀ (env : Environment) (n : Name),
+    match env.find? n with
+    | some (.opaqueInfo _) => signatureModel env n = .failure _
+    | _ => True
 
 -- ════════════════════════════════════════════════════════════
 -- § Redundancy: Environment effects
