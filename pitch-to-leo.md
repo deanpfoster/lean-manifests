@@ -23,7 +23,15 @@ In standard Lean, `theorem foo : T := by sorry` and `theorem foo : T := by exact
 look identical to a consumer who imports the module. Both are `theorem`.
 There's no way to know the evidence level without opening the file.
 
-We propose a 5-level evidence hierarchy, each compiler-enforced:
+Framed another way: Lean already has two ways to declare a theorem you
+can't fully prove. `axiom foo : T` is honest — declared, tracked,
+visible in the axiom-usage report. `theorem foo : T := by sorry` is
+apologetic — warning, contaminated dependency graph, zero structure.
+Every `sorry` looks the same as every other `sorry`, whether it's a
+deliberate assumption or a scratch-hole someone forgot to clean up.
+
+We propose a 5-level evidence hierarchy — **five new kinds of sorry,
+each less apologetic than the last**:
 
 ```
 ○ UnprovenConjecture    — sorry IS the theorem
@@ -33,14 +41,36 @@ We propose a 5-level evidence hierarchy, each compiler-enforced:
 ● ProvenTheorem         — no sorry anywhere
 ```
 
-Each level requires progressively more evidence. A reader scanning
-a header sees the level in the macro name — no compilation needed.
+Each level requires progressively more evidence. A reader scanning a
+header sees the level in the macro name — no compilation needed.
 `DecomposedConjecture` FAILS to compile if any lemma lacks a test.
 `DerivedConjecture` auto-discovers sorry dependencies via
-`getUsedConstantsAsSet` metaprogramming.
+`getUsedConstantsAsSet` metaprogramming and reports them as a trust
+artifact.
 
-This is ~150 lines of macros. It layers on top of Lean's existing
-theorem mechanism without modifying the compiler.
+**Teeth.** Until recently the hierarchy was a convention: the trust
+report listed sorry deps by name, but those names could point at
+undeclared holes in random proof files. We added an attribute-based
+enforcement: every macro stamps `@[manifest_entry]` on its emitted
+declaration, and `DerivedConjecture` / `DecomposedConjecture` refuse
+to compile if any sorry-bearing dep lacks the attribute. The error
+message names the stray and points at the fix.
+
+After the enforcement, the trust report is complete by construction.
+Every entry points at a named manifest macro invocation. No
+off-the-record sorry, because any off-the-record sorry breaks the
+build. The hierarchy went from a stylistic convention to a compile-time
+contract.
+
+The enforcement is binary — declared vs. hidden — not a monotonicity
+check. A `DerivedConjecture` can depend on an `UnprovenConjecture`
+(lower), a `TestedConjecture` (also lower), or a `ProvenTheorem`
+(higher). The hierarchy is ordered informally for human reading; the
+compiler only enforces "no hidden holes."
+
+This is ~150 lines of macros plus ~40 lines of attribute stamping and
+enforcement. It layers on top of Lean's existing theorem mechanism
+without modifying the compiler.
 
 ### B. Readability: 77% Line Reduction
 

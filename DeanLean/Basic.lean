@@ -1,4 +1,5 @@
 import Lean
+import DeanLean.Attr
 
 /-- When true, ProvenTheorem emits axioms instead of looking up proofs.
     Headers don't need to import Proofs/ files → no cascade on proof changes.
@@ -60,7 +61,7 @@ elab "ProvenTheorem " n:ident " : " t:term : command => do
     return
   let fast := levelized.fast.get (← getOptions)
   if fast then
-    elabCommand (← `(axiom $n : $t))
+    elabCommand (← `(@[manifest_entry] axiom $n : $t))
   else
     let proofName := name.appendAfter "_proof"
     let derivationName := name.appendAfter "_derivation"
@@ -68,10 +69,10 @@ elab "ProvenTheorem " n:ident " : " t:term : command => do
     let hasDeriv := (env.find? (ns ++ derivationName)).isSome || (env.find? derivationName).isSome
     if hasProof then
       let rid := Lean.mkIdent proofName
-      elabCommand (← `(theorem $n : $t := $rid))
+      elabCommand (← `(@[manifest_entry] theorem $n : $t := $rid))
     else if hasDeriv then
       let rid := Lean.mkIdent derivationName
-      elabCommand (← `(theorem $n : $t := $rid))
+      elabCommand (← `(@[manifest_entry] theorem $n : $t := $rid))
     else
       throwError s!"ProvenTheorem {name}: neither '{proofName}' nor '{derivationName}' found"
 
@@ -119,12 +120,12 @@ elab "TestedConjecture " n:ident " : " t:term : command => do
       if !isMarkedClassical then
         logWarning m!"TestedConjecture {name}: ⚠ test witness may be vacuous (uses absurd/False.elim). Add `def {testId}_is_classical := ()` to suppress, or provide a positive test."
   | none => pure ()
-  elabCommand (← `(theorem $n : $t := by sorry))
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
 
 open Lean Elab Command in
 elab "UnprovenConjecture " n:ident " : " t:term : command => do
   if (← checkRedundant n t) then return
-  elabCommand (← `(theorem $n : $t := by sorry))
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
 
 private def findSorryDeps (env : Lean.Environment) (info : Lean.ConstantInfo) : Array Lean.Name := Id.run do
   let consts := info.getUsedConstantsAsSet
@@ -173,7 +174,13 @@ elab "DerivedConjecture " n:ident " : " t:term : command => do
     else
       let pct := if totalTheorems > 0 then provenTheorems * 100 / totalTheorems else 0
       logInfo m!"DerivedConjecture {name}: {provenTheorems}/{totalTheorems} theorem deps proven ({pct}%)\n  sorry deps: {sorryDeps}"
-  elabCommand (← `(theorem $n : $t := by sorry))
+    -- ENFORCEMENT: every sorry dep must be a manifest entry.
+    -- Stray sorries hiding in proof files are rejected — the trust report
+    -- emitted above would otherwise be lying about where assumptions live.
+    let strays := sorryDeps.filter (fun d => !hasManifestEntryAttr env d)
+    unless strays.isEmpty do
+      throwError s!"DerivedConjecture {name}: sorry deps must be declared via manifest macros (UnprovenConjecture/TestedConjecture/DecomposedConjecture/DerivedConjecture/ProvenTheorem). These deps are stray sorries, not manifest entries:\n  {strays}\nFix by either wrapping each in the appropriate manifest macro, or replacing with a real proof."
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
 
 -- DecomposedConjecture: broken into pieces, ALL pieces must be at least tested.
 -- Strictly stronger than TestedConjecture, weaker than DerivedConjecture.
@@ -218,10 +225,14 @@ elab "DecomposedConjecture " n:ident " : " t:term : command => do
       logInfo m!"DecomposedConjecture {name}: no sorry deps — consider promoting to DerivedConjecture or ProvenTheorem"
     else
       logInfo m!"DecomposedConjecture {name}: all {sorryDeps.size} lemmas tested ◐\n{"\n".intercalate details.toList}"
-  elabCommand (← `(theorem $n : $t := by sorry))
+    -- ENFORCEMENT: every sorry dep must be a manifest entry.
+    let strays := sorryDeps.filter (fun d => !hasManifestEntryAttr env d)
+    unless strays.isEmpty do
+      throwError s!"DecomposedConjecture {name}: sorry deps must be declared via manifest macros (UnprovenConjecture/TestedConjecture/DecomposedConjecture/DerivedConjecture/ProvenTheorem). These deps are stray sorries, not manifest entries:\n  {strays}\nFix by either wrapping each in the appropriate manifest macro, or replacing with a real proof."
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
 
 macro "FastHeader " n:ident " : " t:term : command =>
-  `(axiom $n : $t)
+  `(@[manifest_entry] axiom $n : $t)
 
 -- VerifyAxiom: confirm a fast-mode axiom has a matching proof (CI-only)
 open Lean Elab Command in
