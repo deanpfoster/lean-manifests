@@ -172,3 +172,43 @@ Fast mode: `set_option levelized.fast true` makes ProvenTheorem emit axioms.
 ## Downstream Dependents
 
 - **l3m** (~/l3m.kiro) — verified coding agent. Depends on this repo via `require dean_lean from git`.
+
+## The Workflow Gap and @[theorems]
+
+### The problem
+
+Manifests catch violations at build time. They don't help during the *writing* phase. When you're modifying a function, you grep for code — you don't grep for manifest entries. The theorems are organized by concept (all path theorems together), not by function (all theorems about `confineIO` together). So consulting them requires knowing where to look.
+
+Concrete example: migrating 24 tool functions to caps in l3m. The manifests weren't consulted first. The code was written, `lake build` caught every bypass. Manifests worked as tripwires, not as design specs.
+
+### The @[theorems] attribute
+
+`DeanLean/Attr.lean` provides a parametric attribute:
+
+```lean
+@[theorems confine_within_root, confine_rejects_dotdot, confineIO_rejects_symlink_escape]
+def confineIO (root path : System.FilePath) : IO (Option WorkspacePath) := ...
+```
+
+Query at elaboration time:
+```lean
+import DeanLean.Attr
+-- getTheorems? env `confineIO returns some #[`confine_within_root, ...]
+```
+
+### The function-keyed index
+
+A metaprogram (`Scripts/GenerateTheoremIndex.lean` in l3m) walks all tagged constants and produces a markdown index with two sections:
+- **Function → Theorems**: given a function, what theorems constrain it?
+- **Theorem → Functions**: given a theorem, what functions does it apply to?
+
+### How to use when modifying code
+
+1. Before modifying a function, check if it's tagged: `grep "@\[theorems" L3m/path/to/file.lean`
+2. Or look it up in the generated index (`docs/theorem-index.md`)
+3. Read the listed theorems to understand what invariants must be preserved
+4. Make the change, run `lake build` — the kernel still catches violations either way
+
+### Honest assessment
+
+The attribute enables consultation. It doesn't enforce it. Whether developers actually check before modifying is a workflow/habit question. The build catches you regardless. The attribute just makes it cheaper to check first.
