@@ -2,6 +2,11 @@
 
 This project formalizes the C++ standard library (N4950) using Lean Manifests conventions.
 
+> **Starting a new project that depends on lean-manifests?** This file
+> is the workflow for working ON lean-manifests itself. For downstream
+> projects, copy `templates/CLAUDE.md` (or `templates/AGENTS.md`) to
+> your project root. See `templates/README.md` for details.
+
 ## Project Structure
 
 - `DeanLean/Basic.lean` — Macros: Signature, ProvenTheorem, TestedConjecture, Wrap, FastHeader
