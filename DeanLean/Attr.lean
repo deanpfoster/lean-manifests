@@ -52,3 +52,22 @@ initialize manifestAxiomAttr : TagAttribute ←
 /-- True iff `n` is tagged with `@[manifest_axiom]`. -/
 def hasManifestAxiomAttr (env : Environment) (n : Name) : Bool :=
   manifestAxiomAttr.hasTag env n
+
+/-- Attribute marking which theorems describe a function's behavior.
+    Usage: `@[theorems thm1, thm2, thm3] def foo := ...`
+    The theorems must be ProvenTheorem / TestedConjecture / DerivedConjecture
+    that mention `foo` in their statement. -/
+syntax (name := theoremsAttr) "theorems" (ident,*) : attr
+
+initialize theoremsExtension : ParametricAttribute (Array Name) ←
+  registerParametricAttribute {
+    name := `theoremsAttr
+    descr := "links a function to theorems that describe its behavior"
+    getParam := fun _name stx => match stx with
+      | `(attr| theorems $thms,*) => return thms.getElems.map (·.getId)
+      | _ => Lean.throwError "invalid theorems attribute"
+  }
+
+/-- Get the theorem names associated with a function via `@[theorems ...]`, if any. -/
+def getTheorems? (env : Environment) (n : Name) : Option (Array Name) :=
+  theoremsExtension.getParam? env n
