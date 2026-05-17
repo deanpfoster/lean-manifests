@@ -185,6 +185,54 @@ correctness, or behavior. It's a tautology disguised as a claim.
   `parse s` returns a `Document` satisfying specific structural
   properties, not just that it returns *something*.
 
+**The strongest pattern: `native_decide` over a documented adversarial corpus.**
+
+Curate a list of inputs known to trip naive parsers (long delimiter
+chains, deep brackets, escape pathologies, large UTF-8 sequences,
+etc.). Run them through your function as a Bool result. Prove the
+Bool with `native_decide`:
+
+```lean
+-- Tests/Stress.lean
+def stressInputs : List String := [
+  "*".replicate 10000,        -- emphasis chains
+  "[".replicate 10000,        -- nested links
+  String.mk (List.replicate 1000 '\\'),  -- escape chains
+  -- ... 11 more curated cases
+]
+
+def runStressTestsPure : Bool :=
+  stressInputs.all fun s => (parse s).blocks.length ≥ 0
+  -- non-trivial predicate that requires parse to produce a result
+
+-- Manifests/Termination.lean
+ProvenTheorem terminates_on_adversarial_inputs :
+  Tests.Stress.runStressTestsPure = true := by native_decide
+```
+
+What this gives you:
+
+- **Real evidence.** The kernel actually runs `parse` on the corpus
+  at build time. If `parse` diverges on any input, `native_decide`
+  hangs and the build fails.
+- **Honest scope.** The claim is "terminates on these N specific
+  cases the corpus author thought were pathological," not "terminates
+  on all inputs." When you find new pathologies, grow the corpus and
+  the proof regenerates.
+- **Composes with regression testing.** Adding a stress case is one
+  line; the proof updates automatically; the build catches future
+  regressions.
+- **Build-cost is bounded.** A few seconds of `native_decide` evaluation
+  is fine; ten thousand cases would not be. Tune corpus size.
+
+This is stronger than option 2 (TestedConjecture with stress test)
+because the kernel runs the test as part of proof checking. It's
+honest where option 3 (informal documentation) is hand-wavy.
+
+Originated from markdown-cm's solution to the same problem we're
+warning about here (its first version had the vacuous totality
+shape). The cleaner version is now the recommended pattern.
+
 ### 5b. Trivially decidable claims left as UnprovenConjecture
 
 **Bad:**
