@@ -76,6 +76,42 @@ open Lean in
 macro "Wrap " n:ident " := " e:term : command => do
   `(noncomputable def $n := $e)
 
+-- ════════════════════════════════════════════════════════════
+-- § Manual test result registration
+-- ════════════════════════════════════════════════════════════
+
+/-!
+For tests that can't be run as pure Lean expressions (e.g.,
+conformance harnesses that read external files like spec.json,
+network-bound checks, etc.), the user can manually register the
+result counts produced by an out-of-band test run.
+
+```
+registerTestResults passes_atx_headings 13 18
+TestedConjecture passes_atx_headings : ...     -- if 13/13 (all pass)
+FailingConjecture passes_atx_headings : ...    -- if 13/18 (some fail)
+```
+
+The user is asserting the count is accurate. Re-run the harness
+and update the numbers when code changes.
+
+This is a stopgap until we have proper IO-during-elaboration
+support, OR until we have a build script that writes results
+to a Lean data file the manifest can import.
+-/
+
+open Lean Elab Command in
+elab "registerTestResults " n:ident " passed " p:num " total " t:num : command => do
+  let name := n.getId
+  let ns ← getCurrNamespace
+  let fullName := ns ++ name
+  let passed := p.getNat
+  let total := t.getNat
+  if passed > total then
+    throwError s!"registerTestResults {name}: passed ({passed}) > total ({total})"
+  modifyEnv fun env => testResultsExt.addEntry env (fullName,
+    { passed, total })
+
 open Lean Elab Command in
 elab "Signature " n:ident " : " t:term : command => do
   let name := n.getId
