@@ -66,6 +66,28 @@ def myFunction (x : Nat) : Nat := ...
 Sparse annotations are better than dense; the auto-detection covers
 the rest. Annotate only the most important relationships.
 
+## Parallel work via the workplan
+
+If multiple agents are working on this project in parallel (e.g., via
+spawn or just via separate terminals), use the workplan to coordinate:
+
+```bash
+lake env lean --run Scripts/Workplan.lean
+```
+
+This prints UnprovenConjectures organized as:
+- **Entry points** — independently approachable, no unmet deps
+- **Blocked** — waiting on other entries
+- **Other** — no deps but not flagged as entry point
+
+Each agent picks an entry point matching its time budget, claims it via
+a one-line commit ("wip: claiming X"), and works. When the entry promotes
+to ProvenTheorem or TestedConjecture, strip its workplan metadata
+(`@[depends_on]`, `@[estimated_minutes]`, `@[entry_point]`).
+
+The workplan is a coordination tool, not a safety tool. The kernel still
+verifies anything that claims ProvenTheorem status.
+
 ## Never
 
 These are kernel-blocked or audit-checked. Don't try:

@@ -55,6 +55,19 @@ def myFunction := ...
 Tag load-bearing relationships explicitly. Sparse is better than
 dense; auto-detection covers the rest.
 
+## Parallel work
+
+If working alongside other agents, use the workplan:
+
+```bash
+lake env lean --run Scripts/Workplan.lean
+```
+
+Pick an entry point (no unmet deps) matching your time budget,
+claim via commit, work. Strip workplan metadata
+(`@[depends_on]`, `@[estimated_minutes]`, `@[entry_point]`) when
+the entry promotes to ProvenTheorem or TestedConjecture.
+
 ## Forbidden patterns
 
 These are kernel-blocked or audit-checked:

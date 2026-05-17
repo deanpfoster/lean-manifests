@@ -18,6 +18,11 @@ and the trust report should be a build artifact.
 - **`DeanLean.IndexGen`** — generic theorem-index generator that any
   project using this library can call to produce a function-keyed
   index of theorem coverage
+- **`DeanLean.Workplan`** — generic workplan generator for parallel
+  LLM agents. Reads `@[depends_on]`, `@[estimated_minutes]`, and
+  `@[entry_point]` attributes on UnprovenConjectures and surfaces
+  ready-to-start work in three buckets (entry points, blocked,
+  other).
 - **`FullyAttested`** — a compile-time check that all sorry-deps of
   a derivation are explicit `ManifestAxioms`, never stray TODOs
 

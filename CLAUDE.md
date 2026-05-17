@@ -261,3 +261,71 @@ def main (args : List String) : IO Unit := do
 2. Run it as part of your verification script (or CI)
 3. Use `@[theorems]` for load-bearing explicit links
 4. Let auto-detection cover the rest — sparse annotations are better than dense
+
+
+## DeanLean.Workplan — Reusable Workplan for Parallel Agents
+
+A generic workplan generator that surfaces UnprovenConjecture work-in-progress as structured tasks. Useful when multiple LLM agents work on the same project in parallel — each picks an entry point, claims it, works.
+
+### Three optional attributes on UnprovenConjectures
+
+```lean
+@[depends_on  foo, bar]              -- what must be done first
+@[estimated_minutes 60]              -- rough effort estimate
+@[entry_point]                       -- flag: independently approachable
+UnprovenConjecture my_claim : ...
+```
+
+These attributes are stripped on promotion to ProvenTheorem or TestedConjecture (work is done; the metadata becomes noise).
+
+### How to invoke from any project
+
+```lean
+-- Scripts/Workplan.lean
+import DeanLean.Workplan
+import MyProject
+
+def main : IO Unit := DeanLean.Workplan.run "MyProject"
+```
+
+Run: `lake env lean --run Scripts/Workplan.lean`
+
+### What it does
+
+Walks every `@[manifest_entry]`-tagged constant in `MyProject.*` that:
+1. Still uses `sorry` transitively (work in progress)
+2. Is NOT marked `@[manifest_axiom]` (permanent assumption, not work)
+
+Prints three sections:
+
+```
+WORKPLAN (12 manifest entries)
+
+== Entry points (no deps, ready to start) — 3 ==
+  parse_atx_headings  est=30m
+  parse_paragraphs    est=45m
+  parse_thematic_breaks est=30m
+
+== Blocked by other entries — 6 ==
+  parse_lists  est=120m  blocked-by: parse_paragraphs
+  parse_emphasis  est=80m  blocked-by: parse_atx_headings, parse_paragraphs
+  ...
+
+== Other (no deps, no entry-point flag) — 3 ==
+  parse_html_blocks  est=?
+  ...
+```
+
+### Recommended workflow for parallel LLM work
+
+1. Pre-load the manifest with `UnprovenConjecture` entries decorated with `@[entry_point]` and `@[estimated_minutes N]` for the work you want done.
+2. Add `Scripts/Workplan.lean` that calls `DeanLean.Workplan.run`.
+3. When you dispatch parallel agents, have each agent's prompt start with: "Run `lake env lean --run Scripts/Workplan.lean`. Pick an entry point matching your time budget. Claim it via a one-line commit. Work."
+4. Once an entry promotes (becomes `ProvenTheorem` or `TestedConjecture`), strip its workplan metadata.
+5. Re-run workplan to see what remains.
+
+This is a workflow tool, not a safety tool — the kernel still verifies anything that tries to claim ProvenTheorem status. The workplan just makes parallel coordination cheaper than memo-by-memo.
+
+### Single-project lookup
+
+`DeanLean.Workplan.collect env "MyProject"` returns the list of `Entry` records if you want to programmatically inspect the workplan instead of printing.
