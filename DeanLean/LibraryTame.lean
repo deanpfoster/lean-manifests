@@ -169,8 +169,14 @@ elab "LibraryTame " root:ident " allows " allowed:ident* : command => do
   match env.find? rootName with
   | none => throwError s!"LibraryTame: root '{rootName}' not found"
   | some _ =>
+    -- If root is at top level (e.g. `def auditRoot`), use the root
+    -- itself as the scope marker — the audit covers the root's own
+    -- definition only. Otherwise use the root's enclosing namespace
+    -- so any `Foo.Bar.X` constant is in scope when auditing `Foo.Bar.Y`.
     let parentNs := rootName.getPrefix
-    let inScope : Array Name := if parentNs == .anonymous then #[] else #[parentNs]
+    let inScope : Array Name :=
+      if parentNs == .anonymous then #[rootName]
+      else #[parentNs]
     let reachable := reachableFromLibrary env rootName
     let mut allViolations : Array LibraryTameViolation := #[]
     for c in reachable do
@@ -194,7 +200,9 @@ elab "LibraryTame " root:ident : command => do
   | none => throwError s!"LibraryTame: root '{rootName}' not found"
   | some _ =>
     let parentNs := rootName.getPrefix
-    let inScope : Array Name := if parentNs == .anonymous then #[] else #[parentNs]
+    let inScope : Array Name :=
+      if parentNs == .anonymous then #[rootName]
+      else #[parentNs]
     let reachable := reachableFromLibrary env rootName
     let mut allViolations : Array LibraryTameViolation := #[]
     for c in reachable do
@@ -208,5 +216,60 @@ elab "LibraryTame " root:ident : command => do
       let lines := allViolations.map LibraryTameViolation.render
       let body := String.intercalate "\n" lines.toList
       throwError s!"LibraryTame {rootName}: {allViolations.size} violations in {parentNs}.*\n{body}\n\nIf any of the externs / axioms are intentional, add them to the allow-list:\n  LibraryTame {rootName} allows <name1> <name2> ..."
+
+/-- Explicit-namespace variant. Use when the entry-point root is
+    in a different namespace from the library being audited (e.g.
+    a top-level `def auditEntryPoint` that touches `LeanStats.*`):
+
+      LibraryTame LeanStats from auditEntryPoint
+
+    This audits constants under `LeanStats.*` reachable from
+    `auditEntryPoint`, ignoring everything outside `LeanStats.*`
+    (so stdlib externs don't trip the audit). -/
+elab "LibraryTame " ns:ident " from " root:ident : command => do
+  let nsName := ns.getId
+  let rootName := root.getId
+  let env ← getEnv
+  match env.find? rootName with
+  | none => throwError s!"LibraryTame: root '{rootName}' not found"
+  | some _ =>
+    let inScope : Array Name := #[nsName]
+    let reachable := reachableFromLibrary env rootName
+    let mut allViolations : Array LibraryTameViolation := #[]
+    for c in reachable do
+      if c.toString.startsWith "_private." then continue
+      allViolations := allViolations ++ inspectConstant env .empty inScope c
+    if allViolations.isEmpty then
+      let thmName := Lean.mkIdent (nsName.appendAfter "_library_tame")
+      elabCommand (← `(@[manifest_entry] theorem $thmName : True := trivial))
+      logInfo m!"LibraryTame {nsName} from {rootName}: ✓ {reachable.size} reachable constants, no violations in {nsName}.*"
+    else
+      let lines := allViolations.map LibraryTameViolation.render
+      let body := String.intercalate "\n" lines.toList
+      throwError s!"LibraryTame {nsName} from {rootName}: {allViolations.size} violations in {nsName}.*\n{body}\n\nIf any of the externs / axioms are intentional, add them to the allow-list:\n  LibraryTame {nsName} from {rootName} allows <name1> ..."
+
+/-- Explicit-namespace variant with allow-list. -/
+elab "LibraryTame " ns:ident " from " root:ident " allows " allowed:ident* : command => do
+  let nsName := ns.getId
+  let rootName := root.getId
+  let allowedSet : NameSet := allowed.foldl (init := .empty) fun s id => s.insert id.getId
+  let env ← getEnv
+  match env.find? rootName with
+  | none => throwError s!"LibraryTame: root '{rootName}' not found"
+  | some _ =>
+    let inScope : Array Name := #[nsName]
+    let reachable := reachableFromLibrary env rootName
+    let mut allViolations : Array LibraryTameViolation := #[]
+    for c in reachable do
+      if c.toString.startsWith "_private." then continue
+      allViolations := allViolations ++ inspectConstant env allowedSet inScope c
+    if allViolations.isEmpty then
+      let thmName := Lean.mkIdent (nsName.appendAfter "_library_tame")
+      elabCommand (← `(@[manifest_entry] theorem $thmName : True := trivial))
+      logInfo m!"LibraryTame {nsName} from {rootName}: ✓ {reachable.size} reachable constants, no violations in {nsName}.*"
+    else
+      let lines := allViolations.map LibraryTameViolation.render
+      let body := String.intercalate "\n" lines.toList
+      throwError s!"LibraryTame {nsName} from {rootName}: {allViolations.size} violations in {nsName}.*\n{body}"
 
 end DeanLean
