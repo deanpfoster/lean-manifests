@@ -647,7 +647,8 @@ elab "Restate " n:ident " from " ns:ident : command => do
   let sourceName := ns.getId ++ n.getId
   restateImpl n sourceName
 
--- Implicit form: Restate foo (searches current namespace, root, open scopes)
+-- Implicit form: Restate foo (searches current namespace, root, open scopes,
+-- then falls back to searching ALL imported constants by suffix match)
 open Lean Elab Command in
 elab "Restate " n:ident : command => do
   let name := n.getId
@@ -656,14 +657,46 @@ elab "Restate " n:ident : command => do
   let scopes := (← getOpenDecls).filterMap fun d => match d with
     | .simple ns _ => some ns
     | _ => none
-  let sourceName ←
-    if (env.find? name).isSome then pure name
-    else if (env.find? (ns ++ name)).isSome then pure (ns ++ name)
+  -- Try exact matches first (fast path)
+  if (env.find? name).isSome then
+    restateImpl n name
+    return
+  if (env.find? (ns ++ name)).isSome then
+    restateImpl n (ns ++ name)
+    return
+  match scopes.findSome? fun s => if (env.find? (s ++ name)).isSome then some (s ++ name) else none with
+  | some found =>
+    restateImpl n found
+    return
+  | none => pure ()
+  -- Fallback: search all constants whose name ends with `.name`
+  -- This handles cross-library restates where the source namespace isn't open
+  let suffix := "." ++ name.toString
+  let mut candidates : Array Lean.Name := #[]
+  for (constName, info) in env.constants do
+    if constName == name then continue
+    let s := constName.toString
+    if s.endsWith suffix || s == name.toString then
+      -- Skip private/internal
+      if s.startsWith "_private." || s.startsWith "_aux." then continue
+      -- Prefer manifest entries
+      if hasManifestEntryAttr env constName then
+        candidates := candidates.push constName
+  if candidates.size == 1 then
+    restateImpl n candidates[0]!
+  else if candidates.size > 1 then
+    -- Multiple matches: prefer the one that's a ProvenTheorem (no sorry)
+    let proven := candidates.filter fun c =>
+      match env.find? c with
+      | some info => !info.getUsedConstantsAsSet.contains ``sorryAx
+      | none => false
+    if proven.size == 1 then
+      restateImpl n proven[0]!
     else
-      match scopes.findSome? fun s => if (env.find? (s ++ name)).isSome then some (s ++ name) else none with
-      | some found => pure found
-      | none => throwError s!"Restate: '{name}' not found in current namespace, root, or any open namespace"
-  restateImpl n sourceName
+      let names := String.intercalate ", " (candidates.toList.map toString)
+      throwError s!"Restate: '{name}' is ambiguous — found in multiple namespaces: [{names}]. Use `Restate {name} from <namespace>` to disambiguate."
+  else
+    throwError s!"Restate: '{name}' not found in current namespace, root, open namespaces, or any imported module"
 
 -- Legacy aliases
 macro "RestateTheorem " n:ident " from " ns:ident : command =>

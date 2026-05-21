@@ -12,3 +12,9 @@ import DeanLean.Cpp.Sort
 import DeanLean.Cpp.Vector
 import DeanLean.Cpp.Map
 import DeanLean.Cpp.Concurrency
+import DeanLean.Conformance
+import DeanLean.Conformance.R
+import DeanLean.Conformance.Numpy
+import DeanLean.Conformance.Sql
+import DeanLean.Conformance.Spec
+import DeanLean.Conformance.Script
