@@ -696,7 +696,10 @@ elab "Restate " n:ident : command => do
       let names := String.intercalate ", " (candidates.toList.map toString)
       throwError s!"Restate: '{name}' is ambiguous — found in multiple namespaces: [{names}]. Use `Restate {name} from <namespace>` to disambiguate."
   else
-    throwError s!"Restate: '{name}' not found in current namespace, root, open namespaces, or any imported module"
+    let scopeStr :=
+      if scopes.isEmpty then "(no open namespaces)"
+      else String.intercalate ", " (scopes.map toString)
+    throwError s!"Restate: '{name}' not found.\n  Searched: bare '{name}', '{ns}.{name}', and these open namespaces: [{scopeStr}].\n  Also searched all imported constants for any name ending in '.{name}' (suffix match) — none found.\n  If the source theorem is in a namespace that isn't currently open, use the explicit form: Restate {name} from <namespace>."
 
 -- Legacy aliases
 macro "RestateTheorem " n:ident " from " ns:ident : command =>
