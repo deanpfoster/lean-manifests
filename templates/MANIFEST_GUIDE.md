@@ -367,3 +367,173 @@ Before committing a manifest change:
 - [ ] `registerTestResults` numbers are current
 - [ ] Promoted claims have workplan metadata stripped
 - [ ] Plain English comments above each claim
+
+---
+
+## 5. Spec-driven manifests
+
+The patterns above tell you how to *write* a valid manifest. The
+patterns in this section tell you how to write a manifest that's
+*genuinely consulted* — one a debugger reaches for before the
+source code, and one detailed enough that a parallel implementer
+could re-implement the module without coordination.
+
+These are derived from a spec-first design exercise on a Lean
+linenoise-equivalent (paste handling, line editing, terminal mode);
+see `~/l3m.kiro/L3m/Manifests/Linenoise.lean` and
+`~/l3m.kiro/docs/spec-driven-manifests.md` for the full rationale.
+
+### 5a. Theorem names are first-class API
+
+Outcome-shaped names track with how someone debugging searches:
+
+- **Good**: `paste_block_arrives_as_one_event_when_brackets_present`
+- **Good**: `fromWorkspace_post_confine_blocks_git`
+- **Good**: `unterminated_paste_yields_parseError`
+- **Bad**: `parse_correct`, `confine_within_root`, `buffer_advances_cursor`
+
+Names like `parse_correct` describe what the function does;
+names like `paste_arrives_as_one_event` describe what the user
+sees. Use the latter when possible.
+
+### 5b. Number layers explicitly when code has them
+
+If the module has clear layers (e.g., pure → IO → audit-grep, or
+terminal → multiplexer → middleware → kernel → libc → parser),
+label them L1, L2, ... in the module doc and tag each theorem
+with its layer. Debugging is a layer walk; the labels make it
+navigable.
+
+### 5c. Falsifying observations on every axiom
+
+Each `ManifestAxiom` includes a doc-comment naming the test that
+would prove it false:
+
+```lean
+ManifestAxiom axiom_decset_2004_brackets_pastes : True
+-- Falsifying observation: enable in cat-xxd test, paste, look
+-- for markers.
+```
+
+Without this, axioms read as ghosts. With it, they're testable
+hypotheses with documented test plans.
+
+### 5d. Negative-case theorems
+
+Every "X is rejected" theorem deserves a paired "X-lookalike is
+NOT rejected." Without negatives, the theorem proves the
+rejection works but not that it doesn't overreach.
+
+```lean
+ProvenTheorem isSafeForMutation_rejects_git
+ProvenTheorem isSafeForMutation_accepts_lookalikes
+  -- .gitignore, .git_old, "git" the file, etc.
+```
+
+### 5e. Worked-example completeness checks
+
+Add a section of `completeness_check_*` theorems whose statements
+are concrete inputs paired with concrete expected outputs. A
+reader can compute the expected output for each and compare.
+Without these, two implementations may diverge on inputs the spec
+didn't think to constrain.
+
+```lean
+ProvenTheorem completeness_check_simple_paste :
+  parse (pasteStart ++ "hello" ++ pasteEnd) = [.paste "hello", .eof]
+```
+
+### 5f. Distinguish stream-during from EOF
+
+Don't conflate "what does the parser do during a stream" with
+"what does it do when the stream ends." Two functions:
+`parsePartial : State → Bytes → State × Events` and
+`parseAtEof : State → Events`. Theorems say which one they're
+about. Generalizes: any IO-stateful protocol has a stream phase
+and a closing phase; the spec must distinguish.
+
+### 5g. Chunk-invariance for streaming
+
+The single most important compositionality theorem for any
+streaming protocol:
+
+```lean
+ProvenTheorem parser_chunk_invariant :
+  ∀ chunk₁ chunk₂, parsePartial (chunk₁ ++ chunk₂)
+    = (parsePartial chunk₁; parsePartial chunk₂)
+```
+
+Without this, parser and reader can be independently correct but
+together produce wrong results.
+
+### 5h. Mark "intentionally not specified"
+
+ManifestAxioms can name choices left to implementations:
+
+```lean
+ManifestAxiom parseError_message_is_implementation_defined : True
+-- The error kind is fixed; the human-readable message text may vary.
+```
+
+Stating underdetermination explicitly prevents parallel implementers
+from accidentally agreeing on irrelevant details, or from disagreeing
+on relevant ones.
+
+### 5i. Mark the FFI / IO boundary explicitly
+
+Sections that cross out of Lean (into syscalls, libraries, OS,
+foreign programs) get a meta-section saying so. Each
+ManifestAxiom in those sections gets a tag:
+
+- `[in-process]` — testable from inside Lean (graduates to
+  TestedConjecture as the project matures)
+- `[out-of-band]` — testable but needs strace/xxd/sibling-process
+- `[external]` — about a foreign system; behavior may change
+
+The Lean-pure layer can carry the strong form ("any passing
+implementation is interchangeable"). FFI layers carry weaker
+guarantees. Marking the boundary makes the gradient clear.
+
+### 5j. Disproven conjectures (cautionary tales)
+
+When implementation reveals an assumption was wrong, record the
+disproof rather than silently updating the manifest. Currently no
+macro support, so write as a doc-tagged comment:
+
+```lean
+-- DISPROVEN 2026-05-21:
+-- TheoremThatWouldHaveBeen :
+--   ∀ env, decset_2004_emitted env → markers_arrive_at_binary env
+--
+-- Disproof: hex log via L3M_DEBUG_STDIN showed lines arriving
+-- without markers despite tmux/terminal being configured.
+-- Resolution: disabled readline's bracketed-paste in wrapper.
+```
+
+The pattern serves debug-by-manifest: if you read a disproof
+matching your symptom, the answer is already documented.
+
+If this pattern earns its keep across several manifests, promote
+to a proper `DisprovenConjecture` macro in lean-manifests with
+the same elaborator shape as `ProvenTheorem` but emitting a doc
+entry not a theorem.
+
+---
+
+## 6. The complete-by-construction goal
+
+When all rules above are followed, the Lean-pure layer of a
+manifest aims to be **complete** in this sense:
+
+> Any two implementations that pass all theorems are
+> observationally indistinguishable.
+
+We never quite reach this for the FFI layer (depends on foreign
+systems). We can reach it for parsers, line editors, history,
+buffer arithmetic, and similar pure modules.
+
+The cost is real: spec-to-code ratio of roughly 1:1 for code
+specified to this depth. The benefit: implementation becomes
+mechanical. Multiple agents can implement the same spec without
+coordination and produce interchangeable artifacts.
+
