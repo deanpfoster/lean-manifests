@@ -210,6 +210,20 @@ private def typeReachesForeignSystem (env : Lean.Environment) (e : Lean.Expr) : 
     Parameters that the claim depends on (e.g. `root : FilePath`)
     go inside the `∀` in the body, not as macro arguments.
 -/
+-- WorldClaim grammar:
+--
+--      /-- doc -/
+--      [@[user_attrs]]
+--      WorldClaim Name := T
+--
+-- Both the doc-comment and the attribute group are optional.
+-- Attributes (when present) are merged with our internal
+-- `@[world_claim]` tag and applied as a single attribute group
+-- to the resulting def. This preserves user-attribute elaboration
+-- semantics: the def is created with all attributes attached at
+-- once, in the order [`world_claim`, ...userAttrs], identical to
+-- if the user had written `@[world_claim, user_attrs] def Name`
+-- by hand.
 syntax (name := worldClaimSyn)
   (docComment)? (Lean.Parser.Term.attributes)? "WorldClaim " ident " := " term : command
 
@@ -247,20 +261,38 @@ def elabWorldClaim : CommandElab := fun stx => do
         rather than a WorldClaim (a permanent assumption about the world). \
         Consider switching to UnprovenConjecture, or expand the type to mention \
         the foreign system you actually depend on."
-    -- Emit: def Name : Prop := T, with any user-supplied attributes
-    -- (e.g. @[falsifies "..."]). Then tag with @[world_claim] via
-    -- a separate Attribute.add step (this lets us cleanly compose
-    -- our internal tagging with arbitrary user attributes).
-    match attrs? with
-    | some a =>
-      elabCommand (← `($a:attributes def $n : Prop := $t))
-    | none =>
-      elabCommand (← `(def $n : Prop := $t))
-    -- Tag the resulting def with @[world_claim].
-    let ns ← getCurrNamespace
-    let fullName := ns ++ n.getId
-    Lean.Elab.Command.liftTermElabM do
-      Lean.Attribute.add fullName `world_claim Syntax.missing
+    -- Build the combined attribute group.
+    --
+    -- Lean's attributes syntax is `@[ attrInstance, attrInstance, ... ]`.
+    -- The user-supplied group (if any) already parses as a sequence of
+    -- attrInstances. We extract those and prepend `world_claim`, then
+    -- emit a single attribute group on the def.
+    --
+    -- This keeps elaboration semantics identical to writing
+    --   @[world_claim, user_attrs] def Name : Prop := T
+    -- by hand. All attributes fire on the same def in one pass.
+    let userAttrInstances : Array (TSyntax `Lean.Parser.Term.attrInstance) :=
+      match attrs? with
+      | some a =>
+        -- a : TSyntax `Lean.Parser.Term.attributes
+        -- shape: «attributes» "@[" sepBy1(attrInstance, ", ") "] "
+        -- the sepBy1 sits at index 1 of the raw syntax.
+        match a.raw with
+        | .node _ _ #[_open, sepStx, _close] =>
+          -- sepBy1 syntax has alternating attrInstance and ", " tokens.
+          sepStx.getArgs.filterMap fun s =>
+            if s.getKind == ``Lean.Parser.Term.attrInstance then
+              some ⟨s⟩
+            else
+              none
+        | _ => #[]
+      | none => #[]
+    -- Construct `world_claim` as an attrInstance.
+    let worldClaimAttrInstance ←
+      `(Lean.Parser.Term.attrInstance| world_claim)
+    let allAttrInstances := #[worldClaimAttrInstance] ++ userAttrInstances
+    let combinedAttrs ← `(Lean.Parser.Term.attributes| @[$allAttrInstances,*])
+    elabCommand (← `($combinedAttrs:attributes def $n : Prop := $t))
     -- Attach the doc-comment to the resulting def.
     if let some docCmt := doc? then
       let docStr ← Lean.getDocStringText docCmt
