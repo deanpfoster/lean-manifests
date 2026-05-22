@@ -391,6 +391,43 @@ elab doc?:(docComment)? "UnprovenConjecture " n:ident " : " t:term : command => 
   elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
   attachOptDoc doc? n.getId
 
+-- Sketch: a name-grabber for prose. Used when we know the shape of a
+-- future conjecture but don't yet have the language or definitions to
+-- phrase the Prop. Produces `def n : Unit := ()` tagged @[sketch].
+--
+-- Form:
+--   /-- Long prose describing what we'd say about `foo` once the
+--       definitions exist to phrase it precisely. -/
+--   Sketch foo_terminates
+--
+-- A Sketch is one phase before UnprovenConjecture. When the language
+-- to write a real Prop arrives, promote `Sketch foo` to
+-- `UnprovenConjecture foo : <Prop>` and the prose moves from "what we
+-- would say" to "what we say."
+--
+-- Sketches are intentionally NOT a synonym for "UnprovenConjecture : True":
+--   - UnprovenConjecture : True ⇒ a TODO that should have a target Prop;
+--     the `: True` is a lie about the claim's shape.
+--   - Sketch ⇒ honest acknowledgment that the formal claim hasn't yet
+--     been phrased. No Prop, no sorry, no false precision.
+--
+-- The macro requires a doc-comment (no point in a name without prose).
+open Lean Elab Command in
+elab doc?:(docComment)? "Sketch " n:ident : command => do
+  if doc?.isNone then
+    Lean.logWarning m!"Sketch {n.getId}: missing doc-comment. \
+      A Sketch's whole purpose is to grab a name for future prose; without \
+      a doc-comment it's just an empty unit. Add a /-- ... -/ block above \
+      describing what the future conjecture will say."
+  -- Emit: def n : Unit := (), tagged @[sketch].
+  elabCommand (← `(@[sketch] def $n : Unit := ()))
+  -- Attach the doc-comment to the resulting def.
+  if let some docCmt := doc? then
+    let docStr ← Lean.getDocStringText docCmt
+    let ns ← getCurrNamespace
+    let fullName := ns ++ n.getId
+    Lean.addDocString fullName docStr
+
 -- ManifestAxiom: a permanent environmental assumption we explicitly accept.
 -- Identical to UnprovenConjecture in proof terms (reduces to sorry), but
 -- tagged as manifest_axiom to distinguish in trust reports.

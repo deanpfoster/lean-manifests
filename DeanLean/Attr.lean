@@ -133,3 +133,44 @@ initialize entryPointAttr : TagAttribute ←
 /-- True iff `n` is tagged with `@[entry_point]`. -/
 def isEntryPoint (env : Environment) (n : Name) : Bool :=
   entryPointAttr.hasTag env n
+
+/-! # Sketch attribute
+
+  The `@[sketch]` attribute marks a `def n : Unit := ()` declaration
+  produced by the `Sketch` macro. A Sketch is a *name-grabber for
+  prose* — used when we know the shape of a future conjecture but
+  don't yet have the language or definitions to phrase the Prop.
+
+  Sketches are not theorems and do not pretend to be. The trust
+  report classifies them separately:
+
+    proven       (●)  ProvenTheorem with kernel-checked proof
+    derived      (◕)  DerivedConjecture proven modulo axioms
+    world claim  (◆)  WorldClaim with falsifying observation
+    tested       (◐)  TestedConjecture with passing tests
+    unproven     (○)  UnprovenConjecture: TODO with target Prop
+    sketch       (◌)  Sketch: signature + prose, no Prop yet
+
+  A Sketch is one phase before UnprovenConjecture. The lifecycle:
+
+    Sketch (signature + prose, no Prop)
+       ↓ when language/definitions exist to phrase it
+    UnprovenConjecture (Prop + prose, no proof)
+       ↓ when a proof exists
+    ProvenTheorem (Prop + proof)
+
+  Sketches are deliberately easier to write than `UnprovenConjecture`
+  — no Prop is required. They're intentionally NOT a synonym for
+  `UnprovenConjecture : True`; they're an honest acknowledgment that
+  the formal claim hasn't yet been phrased. -/
+initialize sketchAttr : TagAttribute ←
+  registerTagAttribute `sketch
+    "marks a declaration as a Sketch (name + prose, no Prop)"
+
+/-- True iff `n` is tagged with `@[sketch]`. -/
+def hasSketchAttr (env : Environment) (n : Name) : Bool :=
+  sketchAttr.hasTag env n
+
+/-- Names of all `@[sketch]`-tagged declarations. -/
+def sketchNames (env : Environment) : Array Name :=
+  sketchAttr.ext.getState env |>.toArray
