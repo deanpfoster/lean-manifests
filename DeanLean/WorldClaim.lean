@@ -1,6 +1,5 @@
 import Lean
 import DeanLean.Attr
-import DeanLean.RegisteredAttr
 
 /-! # DeanLean.WorldClaim — opaque assumptions about the runtime world
 
@@ -89,21 +88,21 @@ namespace DeanLean
 
 open Lean
 
-/-- The `@[world_claim]` registered attribute. Tags `def : Prop`
+/-- The `@[world_claim]` tag attribute. Marks `def : Prop`
     declarations that name environmental assumptions Lean cannot
     prove. Tooling (trust reports, FullyAttested, etc.) reads
     this set to enumerate world claims. -/
-initialize worldClaimAttrR : RegisteredAttr Unit ←
-  RegisteredAttr.register `world_claim
+initialize worldClaimAttr : TagAttribute ←
+  registerTagAttribute `world_claim
     "marks a Prop definition as an environmental world claim"
 
 /-- True iff `n` is tagged with `@[world_claim]`. -/
 def hasWorldClaimAttr (env : Environment) (n : Name) : Bool :=
-  worldClaimAttrR.has? env n
+  worldClaimAttr.hasTag env n
 
 /-- Names of all `@[world_claim]`-tagged declarations. -/
 def worldClaimNames (env : Environment) : Array Name :=
-  worldClaimAttrR.names env
+  worldClaimAttr.ext.getState env |>.toArray
 
 /-- Walk a `Prop` expression looking for vacuous shapes. Reuses
     the same heuristic UnprovenConjecture's `isVacuousProp` uses;
