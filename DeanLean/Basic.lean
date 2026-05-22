@@ -396,8 +396,24 @@ elab doc?:(docComment)? "UnprovenConjecture " n:ident " : " t:term : command => 
 -- tagged as manifest_axiom to distinguish in trust reports.
 -- ManifestAxiom in a trust report = fully attested (as proven as possible).
 -- UnprovenConjecture in a trust report = partial (has TODOs to close).
+--
+-- DEPRECATED 2026-05-22: prefer `WorldClaim` (def : Prop) for environmental
+-- assumptions, with the assumption threaded as an explicit hypothesis
+-- through the theorems that depend on it. WorldClaim avoids the sorry-
+-- using shape that makes ManifestAxiom show up as a project-specific
+-- axiom in `print axioms`. ManifestAxiom remains for backward compatibility
+-- with downstream projects that haven't yet migrated; new code should use
+-- WorldClaim or remove the macro call if the claim is really a CI invariant
+-- enforced by audit-grep.
+--
+-- See `docs/spec-driven-manifests.md` and the `incubated-extraction.md`
+-- memo for the migration playbook.
 open Lean Elab Command in
 elab doc?:(docComment)? "ManifestAxiom " n:ident " : " t:term : command => do
+  Lean.logWarning m!"ManifestAxiom {n.getId}: deprecated. Prefer WorldClaim \
+    (def : Prop) and thread the assumption as an explicit hypothesis. See \
+    docs/spec-driven-manifests.md and the incubated-extraction memo for \
+    the migration pattern. ManifestAxiom remains for backward compatibility."
   if (← checkRedundant n t) then return
   elabCommand (← `(@[manifest_entry] theorem $n : $t := by sorry))
   attachOptDoc doc? n.getId

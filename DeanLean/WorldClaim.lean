@@ -104,6 +104,47 @@ def hasWorldClaimAttr (env : Environment) (n : Name) : Bool :=
 def worldClaimNames (env : Environment) : Array Name :=
   worldClaimAttr.ext.getState env |>.toArray
 
+/-- The `@[falsifies "<tier>"]` parametric attribute. Tags a
+    WorldClaim with how it would be falsified:
+
+      "lean-testable" — provable or testable inside Lean's runtime
+        (a smoke script can verify it); promotable to TestedConjecture
+      "shell-testable" — needs xxd, strace, or a sibling-process
+        observer; not testable from inside Lean alone
+      "OS-axiomatic" — about a foreign system (Linux kernel, git,
+        hardware, terminal), behavior may change with version
+
+    Per Rule 10 of `docs/spec-driven-manifests.md`. Trust reports
+    can group WorldClaims by tier; consumers know which can be
+    promoted to TestedConjectures vs which are permanent.
+
+    Usage:
+
+      @[falsifies "OS-axiomatic"]
+      WorldClaim realpathHonest := ...
+
+    The string is enforced at the macro level: only the three
+    documented tiers are accepted. -/
+syntax (name := falsifiesAttr) "falsifies " str : attr
+
+initialize falsifiesExtension : ParametricAttribute String ←
+  registerParametricAttribute {
+    name := `falsifiesAttr
+    descr := "tier label for a WorldClaim's falsifiability — \"lean-testable\", \"shell-testable\", or \"OS-axiomatic\""
+    getParam := fun _name stx => match stx with
+      | `(attr| falsifies $s:str) =>
+        let tier := s.getString
+        if tier == "lean-testable" || tier == "shell-testable" || tier == "OS-axiomatic" then
+          return tier
+        else
+          throwError m!"falsifies: tier must be one of \"lean-testable\", \"shell-testable\", \"OS-axiomatic\" — got {tier}"
+      | _ => throwError "invalid falsifies attribute"
+  }
+
+/-- Get the `@[falsifies]` tier of a WorldClaim, if any. -/
+def getFalsifiesTier? (env : Environment) (n : Name) : Option String :=
+  falsifiesExtension.getParam? env n
+
 /-- Walk a `Prop` expression looking for vacuous shapes. Reuses
     the same heuristic UnprovenConjecture's `isVacuousProp` uses;
     catches `True`, `∀ ..., True`, etc. -/
@@ -113,9 +154,53 @@ private partial def isVacuousProp : Lean.Expr → Bool
   | .lam _ _ body _ => isVacuousProp body
   | _ => false
 
+/-- Walk reachable constants from an Expr's used-constants set.
+    Used for the "does the WorldClaim's type touch something Lean
+    can't model" structural check. -/
+private partial def reachableFromExpr (env : Lean.Environment) (e : Lean.Expr) : Lean.NameSet :=
+  let initial : Lean.NameSet := e.getUsedConstants.foldl (init := .empty) (·.insert ·)
+  initial.fold expand initial
+where
+  expand (visited : Lean.NameSet) (n : Lean.Name) : Lean.NameSet :=
+    if visited.contains n then visited
+    else
+      let visited := visited.insert n
+      match env.find? n with
+      | none => visited
+      | some info => info.getUsedConstantsAsSet.fold expand visited
+
+/-- True iff a WorldClaim's type structurally touches something
+    Lean cannot model in pure logic — IO, IO.Ref, @[extern], or
+    a constant from an OS-flavored namespace (System.*, Lean's
+    own IO primitives). A WorldClaim whose type is fully pure-Lean
+    should probably be an UnprovenConjecture instead, since the
+    "world" part isn't visible in the type. -/
+private def typeReachesForeignSystem (env : Lean.Environment) (e : Lean.Expr) : Bool :=
+  let reachable := reachableFromExpr env e
+  reachable.any fun n =>
+    -- @[extern]-tagged constants
+    (Lean.getExternAttrData? env n).isSome ||
+    -- IO/IO.Ref/EIO: Lean's IO monad
+    n == ``IO || n == ``BaseIO || n == ``EIO ||
+    -- System.* — paths, processes, env
+    (n.toString.startsWith "System." ) ||
+    -- Constants from L3m.Defs.Audit* (event-typed runtime claims) —
+    -- specific to l3m's pattern but a reasonable heuristic for any
+    -- project that names runtime-event types in WorldClaim signatures.
+    (n.toString.endsWith ".FsEvent") ||
+    (n.toString.endsWith ".WriteEvent") ||
+    (n.toString.endsWith ".NetworkRequest") ||
+    (n.toString.endsWith ".EnvRead") ||
+    (n.toString.endsWith ".SubprocessInvocation") ||
+    (n.toString.endsWith ".ChannelDestination") ||
+    (n.toString.endsWith ".GitAction") ||
+    (n.toString.endsWith ".SafePath")
+
 /-- The WorldClaim macro. Produces a `def Name : Prop := T`
-    tagged `@[world_claim]`. Checks that the type is non-vacuous
-    and that a doc-comment is present.
+    tagged `@[world_claim]`. Checks that the type is non-vacuous,
+    that a doc-comment is present, and that the type structurally
+    references something outside pure Lean (so it's actually a
+    "world" claim and not a hidden UnprovenConjecture).
 
     Form:
 
@@ -139,18 +224,28 @@ def elabWorldClaim : CommandElab := fun stx => do
         observation that would invalidate the claim — the adversarial scenario \
         that would break it. This is the audit surface; without it the claim \
         is undocumented."
-    -- Vacuity check
-    let isVacuous ← Lean.Elab.Command.liftTermElabM do
+    -- Vacuity + foreign-system check
+    let (isVacuous, isForeign) ← Lean.Elab.Command.liftTermElabM do
       let tExpr ← Lean.Elab.Term.elabTerm t none
       Lean.Elab.Term.synthesizeSyntheticMVarsNoPostponing
       let tExpr ← Lean.instantiateMVars tExpr
-      return isVacuousProp tExpr
+      let env ← Lean.getEnv
+      return (isVacuousProp tExpr, typeReachesForeignSystem env tExpr)
     if isVacuous then
       Lean.logWarning m!"WorldClaim {n.getId}: type is vacuous (reduces to `True`). \
         A WorldClaim should state a precise, non-trivial Prop about the runtime \
         environment. If you cannot state the claim as a non-trivial Prop, you do \
         not yet understand what you are assuming; treat that as a research task, \
         not an axiom."
+    if !isVacuous && !isForeign then
+      Lean.logWarning m!"WorldClaim {n.getId}: type does not structurally reach \
+        any foreign-system constant (no @[extern], IO, System.*, or audit-event \
+        type in its dependency tree). A WorldClaim should be about something \
+        Lean cannot model in pure logic. If your claim is purely about Lean \
+        values, it's probably an UnprovenConjecture (a TODO to be proven later) \
+        rather than a WorldClaim (a permanent assumption about the world). \
+        Consider switching to UnprovenConjecture, or expand the type to mention \
+        the foreign system you actually depend on."
     -- Emit: def Name : Prop := T, tagged @[world_claim].
     elabCommand (← `(@[world_claim] def $n : Prop := $t))
     -- Attach the doc-comment to the resulting def.
