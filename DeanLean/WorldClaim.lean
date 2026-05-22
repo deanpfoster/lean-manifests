@@ -210,13 +210,14 @@ private def typeReachesForeignSystem (env : Lean.Environment) (e : Lean.Expr) : 
     Parameters that the claim depends on (e.g. `root : FilePath`)
     go inside the `∀` in the body, not as macro arguments.
 -/
-syntax (name := worldClaimSyn) (docComment)? "WorldClaim " ident " := " term : command
+syntax (name := worldClaimSyn)
+  (docComment)? (Lean.Parser.Term.attributes)? "WorldClaim " ident " := " term : command
 
 open Lean Elab Command in
 @[command_elab worldClaimSyn]
 def elabWorldClaim : CommandElab := fun stx => do
   match stx with
-  | `($[$doc?:docComment]? WorldClaim $n:ident := $t:term) =>
+  | `($[$doc?:docComment]? $[$attrs?:attributes]? WorldClaim $n:ident := $t:term) =>
     -- Doc-comment requirement
     if doc?.isNone then
       Lean.logWarning m!"WorldClaim {n.getId}: missing doc-comment. \
@@ -246,8 +247,20 @@ def elabWorldClaim : CommandElab := fun stx => do
         rather than a WorldClaim (a permanent assumption about the world). \
         Consider switching to UnprovenConjecture, or expand the type to mention \
         the foreign system you actually depend on."
-    -- Emit: def Name : Prop := T, tagged @[world_claim].
-    elabCommand (← `(@[world_claim] def $n : Prop := $t))
+    -- Emit: def Name : Prop := T, with any user-supplied attributes
+    -- (e.g. @[falsifies "..."]). Then tag with @[world_claim] via
+    -- a separate Attribute.add step (this lets us cleanly compose
+    -- our internal tagging with arbitrary user attributes).
+    match attrs? with
+    | some a =>
+      elabCommand (← `($a:attributes def $n : Prop := $t))
+    | none =>
+      elabCommand (← `(def $n : Prop := $t))
+    -- Tag the resulting def with @[world_claim].
+    let ns ← getCurrNamespace
+    let fullName := ns ++ n.getId
+    Lean.Elab.Command.liftTermElabM do
+      Lean.Attribute.add fullName `world_claim Syntax.missing
     -- Attach the doc-comment to the resulting def.
     if let some docCmt := doc? then
       let docStr ← Lean.getDocStringText docCmt

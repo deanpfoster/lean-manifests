@@ -26,4 +26,24 @@ theorem usesRealpathHonest (h : RealpathHonest) :
 -- Tooling reads the tier via getFalsifiesTier? at the consumer's
 -- environment.
 
+-- ── Regression test: WorldClaim accepts an attribute group ──
+-- The grammar is: (docComment)? (attributes)? "WorldClaim" ident ":=" term.
+-- Ensures `@[falsifies "..."]` (or any other attribute) works.
+
+/-- The OS clock advances. Falsifying observation: a deliberately
+    rigged BIOS that returns the same epoch for every IO call. -/
+@[falsifies "OS-axiomatic"]
+WorldClaim ClockAdvances := ∀ (s : String),
+  s.length ≥ 0 ∧ String.length s = s.length
+
+#check @ClockAdvances
+
+-- Multiple user attributes also work:
+/-- A claim with two attributes. Falsifying observation: any
+    breakage of the underlying environmental assumption. -/
+@[falsifies "shell-testable", inline]
+WorldClaim TwoAttrs := ∀ (s : String), s.length = s.length
+
+#check @TwoAttrs
+
 end DeanLean.Tests.WorldClaimTests
