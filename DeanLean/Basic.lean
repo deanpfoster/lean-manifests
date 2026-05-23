@@ -917,3 +917,32 @@ elab "FullyAttested " root:ident : command => do
       logInfo m!"FullyAttested {rootName}: ✓ all sorry deps are ManifestAxioms — theorem is as proven as possible"
     else
       throwError s!"FullyAttested {rootName}: {todos.size} UnprovenConjecture deps (TODOs) remain:\n  {todos.toList}\nConvert these to ManifestAxiom if they are permanent assumptions, or prove them."
+
+-- ════════════════════════════════════════════════════════════
+-- § ConformanceFixture: matches a reference system on specific input
+-- ════════════════════════════════════════════════════════════
+
+/-! ConformanceFixture: a claim that our implementation matches a reference
+    system (R, numpy, PostgreSQL, etc.) on a specific input.
+
+    Properties:
+    - NOT promotable (will never become a ProvenTheorem in the universal sense)
+    - NOT dependable (no DerivedConjecture should cite this as evidence)
+    - IS a regression test (if it breaks, our implementation drifted from the reference)
+    - IS documentation (records what reference system, what version, what input)
+
+    Usage:
+    ```
+    /-- Matches R's VIF package (v1.0) on n=20 signal+noise data.
+        R 4.3.2, run 2026-05-23. -/
+    ConformanceFixture vif_matches_r :
+      (vifRegression rY #[rX0, rX1] cfg).selected = #[0]
+    ```
+-/
+open Lean Elab Command in
+elab doc?:(docComment)? "ConformanceFixture " n:ident " : " t:term : command => do
+  let name := n.getId
+  -- Elaborate and check via native_decide (same as ProvenTheorem proof-wise)
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by native_decide))
+  attachOptDoc doc? n.getId
+  logInfo m!"ConformanceFixture {name}: ✓ matches reference (not promotable, not dependable)"
