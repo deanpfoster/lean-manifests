@@ -92,9 +92,24 @@ def register (name : Name) (descr : String) : IO (RegisteredAttr α) := do
 def has? (r : RegisteredAttr α) (env : Environment) (n : Name) : Bool :=
   r.attr.hasTag env n
 
-/-- Names of all declarations tagged with this attribute. -/
-def names (r : RegisteredAttr α) (env : Environment) : Array Name :=
-  r.attr.ext.getState env |>.toArray
+/-- Names of all declarations tagged with this attribute, across
+    every imported module plus the current module.
+
+    Walks `env.allImportedModuleNames` collecting per-module
+    entries (where cross-module-tagged decls live) and then adds
+    the current module's `getState` (where decls tagged in this
+    file live). This matches the standard pattern used in
+    `Lean.Compiler.LCNF.PhaseExt.forEachDecl`. -/
+def names (r : RegisteredAttr α) (env : Environment) : Array Name := Id.run do
+  let mut acc : Array Name := #[]
+  -- Imported modules
+  for modIdx in [:env.allImportedModuleNames.size] do
+    for decl in r.attr.ext.getModuleEntries env modIdx do
+      acc := acc.push decl
+  -- Current module (the in-progress state)
+  for decl in (r.attr.ext.getState env).toArray do
+    acc := acc.push decl
+  return acc
 
 /-- Extract the value of a tagged declaration. Returns `none` if
     the declaration isn't tagged, doesn't exist, or fails to
