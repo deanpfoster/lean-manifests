@@ -352,6 +352,115 @@ TestedConjecture parse_produces_valid_ast : ...
 This prevents future contributors from reverting to the bad
 formulation.
 
+### Cross-rung pointers (every file points up)
+
+A reader who lands on a file should be able to find a less
+detailed version of the same content with one cursor jump. This
+gives manifest discipline a *bidirectional* shape: the kernel
+checks the proofs (formal); the cross-pointers organize the
+prose (navigational).
+
+The rungs of the ladder, from most detailed to least:
+
+```
+implementation file (LeanStats/Plot/Theme.lean)
+   ↑ "See LeanStats.Manifests.Plot for the contract."
+area manifest (LeanStats.Manifests.Plot)
+   ↑ "See LeanStats.Manifest for the library overview."
+top-level library manifest (LeanStats.Manifest)
+   ↑ "See ../README.md for what this library is for."
+README.md
+```
+
+Every file's module docstring should name the rung above it:
+
+```lean
+/-! # LeanStats.Plot.Theme — switchable visual themes
+
+Themes control colors, weights, fonts, spacing.
+
+For the structural claims about visualization output (SVG
+namespace, data-id counts, theme-CSS distinctness), see
+`LeanStats.Manifest` § 6 ("Interactive visualization"). -/
+```
+
+```lean
+/-! # LeanStats.Manifests.Plot — claims about the plot module
+
+Structural and conformance claims about the plot generators in
+`LeanStats/Plot/`.
+
+For the library overview and the cross-cutting promises
+(purity, safety on degenerate inputs, R-conformance), see
+`LeanStats.Manifest`. -/
+```
+
+```lean
+/-! # LeanStats + LeanTab — Manifest
+
+A pure Lean 4 library for statistics, data manipulation, and
+interactive visualization.
+
+For what the library is for and who should use it, see the
+project `README.md`. -/
+```
+
+The README is the ground floor. It's where someone deciding
+whether to adopt the library lands. Every climb upward
+eventually terminates there.
+
+#### Why this works
+
+A reader who jumps to an implementation file (say, by following
+a stack trace or a search result) usually wants more context but
+doesn't know where to find it. Without pointers, they read the
+implementation file's source and infer the contract. With
+pointers, they climb one rung and read the contract directly.
+
+The discipline crosses project boundaries naturally: a sibling
+project's reader follows the same ladder. The pattern's value
+multiplies when both sides adopt it.
+
+#### Per-function pointers vs per-file pointers
+
+These complement each other:
+
+  * **`@[theorems thmName]` on a function** — points from a
+    function to the specific theorem(s) constraining it.
+    Surfaced by `Scripts/show-theorems.sh`.
+  * **Module-doc pointer at the top of the file** — points from
+    a *file* to its *area manifest* and (transitively) to the
+    library top.
+
+The function-level annotation is for someone modifying the
+function ("which theorems do I need to preserve?"). The
+file-level pointer is for someone reading the file from cold
+("where's the contract for this module?"). Both belong; neither
+replaces the other.
+
+#### When to skip a pointer
+
+Some files don't have a manifest pointer to write:
+
+  * Pure utility files that no manifest claims about (e.g., a
+    one-function helper used only internally).
+  * Generated code (machine-written; the upstream generator's
+    docstring is the right place to put the pointer).
+  * Test fixtures (the test file's docstring already names the
+    test, no further climb needed).
+
+For everything else — every implementation file whose theorems
+appear in the trust report, every manifest file, every
+generated index — there should be a pointer.
+
+#### When the README points elsewhere
+
+The README is the ground floor for *integrators and adopters*.
+For a *deep contributor* the README's pointers go elsewhere:
+to `Architecture.lean` (or equivalent), to design docs, to the
+trust-baseline. Both audiences are served. The README is not
+the last word; it's the first word.
+
 ---
 
 ## Quick checklist
@@ -367,6 +476,8 @@ Before committing a manifest change:
 - [ ] `registerTestResults` numbers are current
 - [ ] Promoted claims have workplan metadata stripped
 - [ ] Plain English comments above each claim
+- [ ] **Module-doc pointer to the file's area manifest, top-level
+      manifest, or README — every file points one rung up**
 
 ---
 
