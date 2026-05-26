@@ -415,10 +415,15 @@ elab doc?:(docComment)? "UnprovenConjecture " n:ident " : " t:term : command => 
 open Lean Elab Command in
 elab doc?:(docComment)? "Sketch " n:ident : command => do
   if doc?.isNone then
-    Lean.logWarning m!"Sketch {n.getId}: missing doc-comment. \
-      A Sketch's whole purpose is to grab a name for future prose; without \
-      a doc-comment it's just an empty unit. Add a /-- ... -/ block above \
-      describing what the future conjecture will say."
+    throwError "Sketch {n.getId}: doc-comment is REQUIRED. \
+      A Sketch's only content is its prose — it produces a `def n : Unit := ()` \
+      tagged @[sketch] and nothing more. Without the doc-comment the Sketch \
+      is an empty unit with no information; the whole point of the Sketch \
+      shape is to grab a name for future prose. Add a /-- ... -/ block above \
+      describing what the future conjecture will say. \
+      \n\nIf you don't yet know what the claim should say, you don't have \
+      enough understanding to add the Sketch. Wait until the prose is \
+      writable, then add it."
   -- Emit: def n : Unit := (), tagged @[sketch].
   elabCommand (← `(@[sketch] def $n : Unit := ()))
   -- Attach the doc-comment to the resulting def.
