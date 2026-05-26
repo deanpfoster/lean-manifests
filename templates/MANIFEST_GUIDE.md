@@ -136,8 +136,9 @@ permanent record of coverage breadth.
 
 ## 4. Workplan attributes
 
-For parallel agent work, decorate `UnprovenConjecture` entries with
-scheduling metadata from `DeanLean.Workplan`:
+For parallel agent work, decorate `UnprovenConjecture` entries (and
+`Sketch` entries — see below) with scheduling metadata from
+`DeanLean.Workplan`:
 
 ```lean
 @[entry_point]                    -- independently approachable
@@ -153,6 +154,35 @@ UnprovenConjecture parse_lists_conformance : ...
 **Strip all workplan metadata on promotion.** Once a conjecture
 becomes `TestedConjecture` or `ProvenTheorem`, the scheduling info
 is noise. Remove it.
+
+The workplan picker (`DeanLean.Workplan.collect`) surfaces:
+
+  * `@[manifest_entry]` constants that still use `sorry` transitively
+    (UnprovenConjectures, TestedConjectures awaiting tests, etc.)
+  * **`@[sketch]` constants** — name-grabbers waiting for a Prop.
+
+It does NOT surface `WorldClaim`s. Those are permanent
+environment-axiomatic gaps, not pending work — they will never
+close to ProvenTheorem because the fact is about the world, not
+about Lean.
+
+The lifecycle:
+
+```
+Sketch  (signature + prose, no Prop)
+   ↓ when language exists to phrase the Prop
+UnprovenConjecture  (Prop + prose, no proof)
+   ↓ when proof closes
+ProvenTheorem  (Prop + proof)
+```
+
+Sketches that will never become real (because they describe
+something Lean can't model) belong as **WorldClaim** instead —
+which forces you to phrase the Prop and the falsifying
+observation, but doesn't enter the workplan. If you can't phrase
+the falsifying observation, you don't yet understand what you're
+assuming, and the macro now hard-errors on a WorldClaim without
+a doc-comment.
 
 Run `lake env lean --run Scripts/Workplan.lean` to see the current
 state: entry points ready to claim, blocked items, and untagged work.

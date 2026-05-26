@@ -232,13 +232,20 @@ open Lean Elab Command in
 def elabWorldClaim : CommandElab := fun stx => do
   match stx with
   | `($[$doc?:docComment]? $[$attrs?:attributes]? WorldClaim $n:ident := $t:term) =>
-    -- Doc-comment requirement
+    -- Doc-comment requirement (mandatory, not optional)
     if doc?.isNone then
-      Lean.logWarning m!"WorldClaim {n.getId}: missing doc-comment. \
-        Conventionally a WorldClaim's doc-comment describes the FALSIFYING \
-        observation that would invalidate the claim — the adversarial scenario \
-        that would break it. This is the audit surface; without it the claim \
-        is undocumented."
+      throwError "WorldClaim {n.getId}: doc-comment is REQUIRED. \
+        A WorldClaim names something we trust about the runtime \
+        environment that we will NEVER prove in Lean. The \
+        doc-comment must describe the FALSIFYING observation — \
+        the adversarial scenario that would make the claim false. \
+        This is the entire audit surface for the WorldClaim; \
+        without it the claim is undocumented trust. \
+        \n\nIf you cannot articulate what would falsify the claim, \
+        you do not yet understand what you are assuming. Treat \
+        that as a research task: stub it as a Sketch instead, \
+        document the prose intent, and promote to WorldClaim once \
+        you can name the falsifying observation."
     -- Vacuity + foreign-system check
     let (isVacuous, isForeign) ← Lean.Elab.Command.liftTermElabM do
       let tExpr ← Lean.Elab.Term.elabTerm t none

@@ -53,24 +53,45 @@ structure Entry where
   isEntry : Bool
   deriving Repr
 
-/-- Walk the env, find every const tagged @[manifest_entry] in the
-    given namespace that's still a candidate for further work,
-    collect its workplan metadata.
+/-- Walk the env, find every const that's a candidate for further
+    work in the given namespace, collect its workplan metadata.
 
-    "Candidate for further work" = uses sorry AND not tagged as
-    @[manifest_axiom]. -/
+    Two kinds of candidates:
+
+    1. **`@[manifest_entry]`-tagged constants** that:
+       - Use `sorry` transitively (UnprovenConjecture, TestedConjecture
+         awaiting test, DerivedConjecture awaiting axioms)
+       - Are NOT tagged `@[manifest_axiom]` (those are permanent
+         assumptions, not work; deprecated in favor of WorldClaim)
+
+    2. **`@[sketch]`-tagged constants** — name-grabbers for future
+       conjectures. The lifecycle is:
+         Sketch (signature + prose, no Prop)
+            → UnprovenConjecture (Prop + prose, no proof)
+            → ProvenTheorem (Prop + proof)
+       Sketches are workplan items: an agent picks one and tries
+       to phrase the Prop, then close the proof.
+
+    `WorldClaim`s are NOT in the workplan: they're permanent
+    environment-axiomatic gaps, named for the audit surface, not
+    pending work. They never close to ProvenTheorem because the
+    fact is about the world, not about Lean. -/
 def collect (env : Environment) (namespacePrefix : String) : Array Entry := Id.run do
   let mut result : Array Entry := #[]
   for (n, ci) in env.constants.toList do
     let s := n.toString
     if !s.startsWith namespacePrefix then continue
-    if !manifestEntryAttr.hasTag env n then continue
     -- Skip auto-generated companion defs
     if s.contains '_' && (s.endsWith "_check" || s.endsWith "_test") then continue
-    -- Skip permanent axioms (they're not work-in-progress)
-    if manifestAxiomAttr.hasTag env n then continue
-    -- Skip already-proven entries (no sorry in transitive closure)
-    if !ci.getUsedConstantsAsSet.contains ``sorryAx then continue
+    -- Pick up Sketches (always) and manifest_entry-tagged unproven (sorry-using).
+    let isSketch := hasSketchAttr env n
+    let isManifestEntry := manifestEntryAttr.hasTag env n
+    let isAxiom := manifestAxiomAttr.hasTag env n
+    let usesSorry := ci.getUsedConstantsAsSet.contains ``sorryAx
+    let candidate :=
+      isSketch ||
+      (isManifestEntry && !isAxiom && usesSorry)
+    if !candidate then continue
     let deps := (getDependsOn? env n).getD #[]
     let mins := (getEstimatedMinutes? env n).getD 0
     let entry := isEntryPoint env n
