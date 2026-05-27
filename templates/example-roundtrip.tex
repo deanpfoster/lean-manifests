@@ -1,0 +1,41 @@
+% example-roundtrip.tex — a minimal example exercising the
+% manifest-discipline macros + round-trip verifier.
+%
+% Tests that every \manifestThm and \manifestSym in this file
+% resolves to a real entry in the JSON dump. The verifier
+% should report 3 resolved markers (or fewer if some entries
+% don't exist in the test fixture's namespace).
+
+\documentclass{article}
+\usepackage{manifest-discipline}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+
+\begin{document}
+
+\section*{Sample manifest-driven theorems}
+
+\begin{theorem}[Sketch about IO surface]
+\manifestThm{DeanLean.Tests.SketchTests.foo_io_surface_bounded}
+The function $\manifestSym{DeanLean.Tests.SketchTests.foo_io_surface_bounded}{f}$
+has a bounded IO surface, in a sense to be made precise once
+the language can express ``reachable IO operations from a
+function body.''
+\end{theorem}
+
+\begin{theorem}[Termination on well-formed input]
+\manifestThm{DeanLean.Tests.SketchTests.bar_terminates_on_well_formed_input}
+For inputs satisfying a well-formedness predicate (currently
+only sketched), the function $\manifestSym{DeanLean.Tests.SketchTests.bar_terminates_on_well_formed_input}{g}$
+terminates.
+\end{theorem}
+
+\begin{theorem}[The OS clock advances]
+\manifestThm{DeanLean.Tests.WorldClaimTests.ClockAdvances}
+For any string $s$ produced by reading the clock, the underlying
+clock has advanced. Falsifying observation: a deliberately rigged
+BIOS that returns the same epoch for every IO call would make
+this false.
+\end{theorem}
+
+\end{document}
