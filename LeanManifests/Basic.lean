@@ -951,3 +951,27 @@ elab doc?:(docComment)? "ConformanceFixture " n:ident " : " t:term : command => 
   elabCommand (← `(@[manifest_entry] theorem $n : $t := by native_decide))
   attachOptDoc doc? n.getId
   logInfo m!"ConformanceFixture {name}: ✓ matches reference (not promotable, not dependable)"
+
+-- ════════════════════════════════════════════════════════════
+-- § UnitTest: kernel-checked on one specific input (no ∀)
+-- ════════════════════════════════════════════════════════════
+
+/-! UnitTest: a claim that our function returns a specific value on a
+    specific input. Proven by `native_decide`. Mechanically identical
+    to ProvenTheorem, but semantically weaker: it says nothing about
+    other inputs.
+
+    Use ProvenTheorem for universally-quantified properties.
+    Use UnitTest for concrete input/output pairs.
+
+    Usage:
+    ```
+    UnitTest mean_empty : mean #[] = 0
+    UnitTest sort_five : quicksort [3,1,4,1,5] = [1,1,3,4,5]
+    ```
+-/
+open Lean Elab Command in
+elab doc?:(docComment)? "UnitTest " n:ident " : " t:term : command => do
+  if (← checkRedundant n t) then return
+  elabCommand (← `(@[manifest_entry] theorem $n : $t := by native_decide))
+  attachOptDoc doc? n.getId
