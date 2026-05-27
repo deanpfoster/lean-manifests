@@ -2,86 +2,120 @@
 
 Macros and tooling for **evidence-tagged claims** in Lean 4.
 
-The thesis: every theorem in a Lean module should carry a named
-evidence level, the compiler should track where every `sorry` lives,
-and the trust report should be a build artifact.
+The thesis: every claim in a Lean module should carry a named
+evidence level, the compiler should track where every `sorry`
+lives, and the trust report should be a build artifact.
 
 ## What's here
 
-- **Macros** for evidence-tagged declarations:
-  - `ProvenTheorem` (kernel-checked proof)
-  - `DerivedConjecture` (proven modulo named axioms)
-  - `ManifestAxiom` (permanent environmental assumption)
-  - `TestedConjecture` (verified for concrete inputs)
-  - `UnprovenConjecture` (TODO)
-- **`@[theorems]`** attribute for linking functions to their theorems
-- **`DeanLean.IndexGen`** — generic theorem-index generator that any
-  project using this library can call to produce a function-keyed
-  index of theorem coverage
-- **`DeanLean.Workplan`** — generic workplan generator for parallel
-  LLM agents. Reads `@[depends_on]`, `@[estimated_minutes]`, and
-  `@[entry_point]` attributes on UnprovenConjectures and surfaces
-  ready-to-start work in three buckets (entry points, blocked,
-  other).
-- **`FullyAttested`** — a compile-time check that all sorry-deps of
-  a derivation are explicit `ManifestAxioms`, never stray TODOs
+The `LeanManifests` namespace ships seven evidence-level macros and
+a small set of build-time tools that walk the manifest environment.
+
+### Macros
+
+| Macro                  | Glyph | Meaning                                               |
+|------------------------|-------|-------------------------------------------------------|
+| `ProvenTheorem`        | ●     | Kernel-checked proof, sorry-free in transitive closure |
+| `DerivedConjecture`    | ◕     | Proven modulo named manifest entries                  |
+| `DecomposedConjecture` | ◑     | Derivation whose sorry deps are all `TestedConjecture` |
+| `TestedConjecture`     | ◐     | Universal claim with passing test witness             |
+| `UnprovenConjecture`   | ○     | TODO — a hole expected to close                       |
+| `WorldClaim`           | 🌍    | Permanent environmental fact (OS, network, hardware)   |
+| `Sketch`               | ✎     | A name with prose, no `Prop` yet                      |
+| `ConformanceFixture`   | =     | Matches a named external system (R, numpy, ...)       |
+
+Plus `ManifestAxiom` (deprecated alias for `WorldClaim`) and
+`@[theorems]` for linking functions to their manifest entries.
+
+### Tools
+
+| Tool          | Purpose                                                                                |
+|---------------|----------------------------------------------------------------------------------------|
+| `IndexGen`    | Function ↔ theorem index generator                                                     |
+| `Workplan`    | Surfaces sorry-using `@[manifest_entry]` and `@[sketch]` decls for parallel agents     |
+| `LibraryTame` | Structural audit: walks the reachable surface of a library's API for unwanted features |
+| `LatexExtract`| Dumps the manifest environment to JSON for paper-ready LaTeX appendices                |
+| `LatexRoundtrip`| Verifies that LaTeX `\manifestThm{...}` markers resolve to real Lean entries        |
+| `Conformance` | Reference-system framework (R, numpy, SQL, spec-fixtures)                              |
 
 ## How to use
 
+In your `lakefile.lean`:
+
 ```lean
--- In your lakefile.lean:
-require dean_lean from git "https://github.com/deanpfoster/lean-manifests" @ "mainline"
+require lean_manifests from git
+  "https://github.com/deanpfoster/lean-manifests" @ "main"
 ```
 
-Then in your code:
+In your code:
 
 ```lean
-import DeanLean.Basic
+import LeanManifests.Basic
 
 ProvenTheorem foo : ∀ x, P x := by ...
-ManifestAxiom os_assumption : ∀ x, Q x
-DerivedConjecture combined : ∀ x, P x ∧ Q x := ⟨foo x, os_assumption x⟩
+WorldClaim os_assumption := ∀ x, Q x
+DerivedConjecture combined : ∀ x, P x ∧ Q x :=
+  fun x => ⟨foo x, os_assumption x⟩
 ```
 
-The compiler tracks the evidence chain. The trust report shows what
-your top-level claims rest on.
+The compiler tracks the evidence chain. Every `Sketch` and
+`WorldClaim` requires a doc-comment (the macro hard-errors on
+missing prose, since the doc-comment is the entire artifact). The
+trust report shows what your top-level claims rest on.
+
+## Design rationale
+
+Lean's kernel is binary: a claim is either proven or it carries
+`sorry`. In real software, claims live at every stage of maturity
+simultaneously — proven on small inputs, tested on fixtures,
+trusted environmentally about the OS, sketched as an aspiration.
+Collapsing all of these into `theorem` versus `theorem ... := by
+sorry` loses information that consumers and future developers
+need.
+
+Each macro introduces a named evidence level that the build system
+enforces. Promotion (e.g., `TestedConjecture` → `ProvenTheorem`)
+is a single keyword change; the build verifies the new level's
+requirements are met.
+
+For the working manual for manifest authors, see
+`templates/MANIFEST_GUIDE.md`.
 
 ## Starting a new project
 
-We ship templates for AI coding agents at **`templates/`**. Copy
-`templates/CLAUDE.md` (or `templates/AGENTS.md` for tools that read
-that convention) to your project root and customize. The templates
-prescribe a workflow that makes manifests usable as design specs,
-not just build-time tripwires:
+We ship templates for AI coding agents at `templates/`. Copy
+`templates/CLAUDE.md` (for Claude / Anthropic conventions) or
+`templates/AGENTS.md` (for the open AGENTS.md convention) to your
+project root and customize.
+
+The templates prescribe a workflow that makes manifests usable as
+design specs, not just build-time tripwires:
 
 1. Before modifying a function, run `bash Scripts/show-theorems.sh
-   PROJECT.functionName` to see what theorems constrain it
-2. After modifying, run `bash Scripts/verify-all.sh`
+   PROJECT.functionName` to see what theorems constrain it.
+2. After modifying, run `bash Scripts/verify-all.sh`.
 3. Annotate new theorems with `@[theorems]` on the function they
-   describe
+   describe.
 
 See `templates/README.md` for details.
 
 ## Documentation
 
-- **`CLAUDE.md`** — workflow and conventions for working ON
-  lean-manifests itself (not for downstream users — see
-  `templates/` for that)
-- **`templates/`** — starter agent configs for downstream projects
-- **`templates/MANIFEST_GUIDE.md`** — how to write a good manifest
-  (patterns, anti-patterns, promotion discipline)
-- **`CONVERSION_GUIDE.md`** — guide for converting existing Lean code
-  to use the manifest discipline
-- **`CPP_PROJECT.md`** — an example: formalizing the C++ standard
-  library with manifests
-- **`pitch-to-leo.md`** — the design rationale, in essay form
+| File                                       | What it's about                              |
+|--------------------------------------------|----------------------------------------------|
+| `templates/MANIFEST_GUIDE.md`              | How to write a good manifest                 |
+| `templates/MANIFEST_LATEX_ROUNDTRIP.md`    | Paper appendices with hover-back-to-Lean    |
+| `CLAUDE.md`                                | Conventions for working ON lean-manifests itself |
 
 ## Status
 
 Active development. Used in production by:
-- `cslib` (computability and language theory)
-- `dean_lean/Cpp/*` (C++ standard library formalization)
-- `l3m` (Lean LLM agent — kernel-verified safety theorems)
+
+- **`l3m`** — a Lean 4 LLM coding agent with kernel-verified safety
+  theorems
+- **`lean-stats`** — a pure statistics library validated against R
+- **`markdown-cm`** — a CommonMark renderer with conformance proofs
+- **`dean_cpp`** — C++ standard library formalization (separate repo)
 
 ## License
 

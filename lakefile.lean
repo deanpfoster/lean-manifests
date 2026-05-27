@@ -1,10 +1,10 @@
 import Lake
 open Lake DSL
 
-package «dean_lean» where
+package «lean_manifests» where
   leanOptions := #[
     ⟨`autoImplicit, false⟩
   ]
 
 @[default_target]
-lean_lib «DeanLean» where
+lean_lib «LeanManifests» where

@@ -59,8 +59,8 @@ What's NOT checkable:
 ## Files
 
 ```
-DeanLean/LatexExtract.lean         # walks the env, emits JSON
-DeanLean/LatexRoundtrip.lean       # parses LaTeX, verifies markers
+LeanManifests/LatexExtract.lean         # walks the env, emits JSON
+LeanManifests/LatexRoundtrip.lean       # parses LaTeX, verifies markers
 Scripts/LatexExtractSmoke.lean     # smoke test on the test corpus
 Scripts/LatexRoundtripCLI.lean     # CLI for the verifier
 templates/manifest-discipline.sty  # LaTeX macros

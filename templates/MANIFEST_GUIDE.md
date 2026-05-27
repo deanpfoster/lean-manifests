@@ -24,7 +24,7 @@ for the consumer, not for yourself.
 Structure:
 
 ```lean
-import DeanLean.Basic
+import LeanManifests.Basic
 import YourProject.Manifests.Axis1
 import YourProject.Manifests.Axis2
 
@@ -138,7 +138,7 @@ permanent record of coverage breadth.
 
 For parallel agent work, decorate `UnprovenConjecture` entries (and
 `Sketch` entries — see below) with scheduling metadata from
-`DeanLean.Workplan`:
+`LeanManifests.Workplan`:
 
 ```lean
 @[entry_point]                    -- independently approachable
@@ -155,7 +155,7 @@ UnprovenConjecture parse_lists_conformance : ...
 becomes `TestedConjecture` or `ProvenTheorem`, the scheduling info
 is noise. Remove it.
 
-The workplan picker (`DeanLean.Workplan.collect`) surfaces:
+The workplan picker (`LeanManifests.Workplan.collect`) surfaces:
 
   * `@[manifest_entry]` constants that still use `sorry` transitively
     (UnprovenConjectures, TestedConjectures awaiting tests, etc.)
