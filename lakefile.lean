@@ -8,3 +8,5 @@ package «lean_manifests» where
 
 @[default_target]
 lean_lib «LeanManifests» where
+
+lean_lib «DeanLean» where
