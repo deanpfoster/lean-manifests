@@ -299,6 +299,69 @@ lean-manifests). But if you're tempted to "temporarily" sorry a
 ProvenTheorem — don't. Use `UnprovenConjecture` for unproven claims.
 Promote when proven. The evidence level IS the status.
 
+### 5e. UnitTest vs. Theorem: the proof method tells you which
+
+A common temptation is to downgrade a no-`∀` claim to `UnitTest`:
+
+```lean
+-- "no forall, so it must be a unit test"
+UnitTest mean_empty :
+  mean #[] = 0
+```
+
+That heuristic is **wrong about 5% of the time** and the failure modes
+are nasty. The correct line:
+
+  * **`UnitTest`** = "run the code on this fixture and check the
+    output." Proof is `native_decide` (or `rfl` for trivially-equal
+    values). The proof effort is bounded by how long the function
+    takes to run on the fixture. **Cheap.**
+
+  * **`ProvenTheorem`** = "this property holds, here's a structural
+    argument." Proof is anything that's NOT just running the code:
+    `simp [unfold]`, `induction`, case analysis, named lemmas. The
+    proof IS the value-add; it gives you stronger guarantees than
+    any single fixture.
+
+The tell that you've miscategorized: `native_decide` is slow, fails
+to synthesize `Decidable`, or runs out of heartbeats. When that
+happens, the function is doing too much work to be a unit test —
+either:
+
+  (a) The body equates values of a custom inductive type without
+      `DecidableEq`. The `UnitTest` macro can't synthesize the
+      decidability instance; the body's `_proof = rfl` would have
+      worked. Promote back to `ProvenTheorem`.
+  (b) The `native_decide` triggers symbolic evaluation of a large
+      data structure (e.g., `List.replicate 12000 'a'`) and hangs
+      for minutes. The claim is structural, not fixture-shaped;
+      the proof should reduce to a small lemma over `truncateForLlm`
+      (or whatever the truncation function is) plus `simp`.
+      Promote to `ProvenTheorem`, write a real proof.
+
+**Decision rule (95% of cases):**
+
+```
+no ∀, body uses only types with DecidableEq, native_decide finishes
+in < 1 sec  →  UnitTest
+
+anything else  →  ProvenTheorem (or UnprovenConjecture if the proof
+                  doesn't exist yet)
+```
+
+**Watch out for:** custom inductive types (`AgentAction`, `ReviewVerdict`,
+your own structures). Unless they `deriving DecidableEq`, equality on
+them will fail `native_decide`'s synthesis check. The original `_proof`
+form using `rfl` works because `rfl` doesn't need `Decidable` — but the
+`UnitTest` macro requires it.
+
+**Anti-pattern: bulk-downgrade by syntactic heuristic.** Auditing 280
+ProvenTheorems with a "no ∀ → downgrade" rule will produce ~95%
+correct conversions but the remaining 5% will silently break the
+build (often only on a clean rebuild — see the "library vs binary"
+note in the verify-all.sh script). Run `lake build L3m` after any
+bulk downgrade.
+
 ---
 
 ## 6. Promotion discipline
