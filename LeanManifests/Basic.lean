@@ -701,14 +701,15 @@ private def restateImpl (n : Lean.TSyntax `ident) (sourceName : Lean.Name) : Com
 
 -- Explicit form: Restate foo from Namespace
 open Lean Elab Command in
-elab "Restate " n:ident " from " ns:ident : command => do
+elab doc?:(docComment)? "Restate " n:ident " from " ns:ident : command => do
   let sourceName := ns.getId ++ n.getId
   restateImpl n sourceName
+  attachOptDoc doc? n.getId
 
 -- Implicit form: Restate foo (searches current namespace, root, open scopes,
 -- then falls back to searching ALL imported constants by suffix match)
 open Lean Elab Command in
-elab "Restate " n:ident : command => do
+elab doc?:(docComment)? "Restate " n:ident : command => do
   let name := n.getId
   let env ← getEnv
   let ns ← getCurrNamespace
@@ -718,13 +719,16 @@ elab "Restate " n:ident : command => do
   -- Try exact matches first (fast path)
   if (env.find? name).isSome then
     restateImpl n name
+    attachOptDoc doc? n.getId
     return
   if (env.find? (ns ++ name)).isSome then
     restateImpl n (ns ++ name)
+    attachOptDoc doc? n.getId
     return
   match scopes.findSome? fun s => if (env.find? (s ++ name)).isSome then some (s ++ name) else none with
   | some found =>
     restateImpl n found
+    attachOptDoc doc? n.getId
     return
   | none => pure ()
   -- Fallback: search all constants whose name ends with `.name`
@@ -742,6 +746,7 @@ elab "Restate " n:ident : command => do
         candidates := candidates.push constName
   if candidates.size == 1 then
     restateImpl n candidates[0]!
+    attachOptDoc doc? n.getId
   else if candidates.size > 1 then
     -- Multiple matches: prefer the one that's a ProvenTheorem (no sorry)
     let proven := candidates.filter fun c =>
@@ -750,6 +755,7 @@ elab "Restate " n:ident : command => do
       | none => false
     if proven.size == 1 then
       restateImpl n proven[0]!
+      attachOptDoc doc? n.getId
     else
       let names := String.intercalate ", " (candidates.toList.map toString)
       throwError s!"Restate: '{name}' is ambiguous — found in multiple namespaces: [{names}]. Use `Restate {name} from <namespace>` to disambiguate."
