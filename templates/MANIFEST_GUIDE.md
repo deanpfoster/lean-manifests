@@ -310,18 +310,57 @@ UnitTest mean_empty :
 ```
 
 That heuristic is **wrong about 5% of the time** and the failure modes
-are nasty. The correct line:
+are nasty. The correct line is about the proof method, not the type
+shape:
 
   * **`UnitTest`** = "run the code on this fixture and check the
-    output." Proof is `native_decide` (or `rfl` for trivially-equal
-    values). The proof effort is bounded by how long the function
-    takes to run on the fixture. **Cheap.**
+    output." Proof is `native_decide`. The proof effort is bounded
+    by how long the function takes to run on the fixture. **Cheap.**
 
-  * **`ProvenTheorem`** = "this property holds, here's a structural
-    argument." Proof is anything that's NOT just running the code:
-    `simp [unfold]`, `induction`, case analysis, named lemmas. The
-    proof IS the value-add; it gives you stronger guarantees than
-    any single fixture.
+  * **`ProvenTheorem`** = "this property holds; the kernel can verify
+    it directly." Proof is `rfl` (the LHS reduces to the RHS by
+    definition), `simp [unfold]`, `induction`, case analysis, named
+    lemmas, or any combination. The kernel checks every step.
+
+#### The proof method tells you which
+
+There's a real distinction here that's worth making explicit:
+
+  * `rfl` works when LHS and RHS reduce to the same normal form by
+    Lean's β/δ/ι/ζ rules. **Pure kernel reduction.** No external
+    components in the trust path.
+  * `decide` works when there's a `Decidable` instance the kernel can
+    reduce. **Also pure kernel reduction**, just using a decision
+    procedure.
+  * `native_decide` works the same way as `decide`, except instead of
+    the kernel reducing the decision procedure, the procedure is
+    compiled to native code, executed, and the kernel accepts the
+    result. **Slightly larger trust base** — adds the Lean → C
+    compiler, the C compiler, and the runtime.
+
+In practice the difference is small (Lean's compilers are extensively
+tested), but it's real. For load-bearing security claims, prefer
+`rfl` or `decide` over `native_decide` when feasible. For UnitTest-
+shaped claims (concrete fixture inputs, finite outputs), `native_decide`
+is fine.
+
+This means the right way to think about UnitTest:
+
+> A UnitTest is a claim where the proof is "the kernel ran the
+> compiled code on this input and got this output." The compiled
+> code is a small additional trust hop, but the upside is you can
+> verify behavior on inputs that are too computational for `rfl` to
+> handle in reasonable time.
+
+And the right way to think about `rfl`-able claims:
+
+> If the LHS reduces to the RHS by Lean's definitional equality,
+> the kernel can verify it without running any code. This is the
+> strongest form of evidence. Many claims that *look* like unit
+> tests (specific input, specific output) are actually `rfl`-able
+> because the function reduces statically. Take the trust win.
+
+#### When `native_decide` fails (the 5% case)
 
 The tell that you've miscategorized: `native_decide` is slow, fails
 to synthesize `Decidable`, or runs out of heartbeats. When that
@@ -330,37 +369,47 @@ either:
 
   (a) The body equates values of a custom inductive type without
       `DecidableEq`. The `UnitTest` macro can't synthesize the
-      decidability instance; the body's `_proof = rfl` would have
-      worked. Promote back to `ProvenTheorem`.
+      decidability instance. **Use `ProvenTheorem` with `rfl`** —
+      `rfl` doesn't need `Decidable`, just definitional reduction.
   (b) The `native_decide` triggers symbolic evaluation of a large
       data structure (e.g., `List.replicate 12000 'a'`) and hangs
       for minutes. The claim is structural, not fixture-shaped;
-      the proof should reduce to a small lemma over `truncateForLlm`
-      (or whatever the truncation function is) plus `simp`.
-      Promote to `ProvenTheorem`, write a real proof.
+      the proof should reduce to a small lemma plus `simp`.
+      **Use `ProvenTheorem` with a real proof.**
 
-**Decision rule (95% of cases):**
+#### Decision rule (95% of cases)
 
 ```
-no ∀, body uses only types with DecidableEq, native_decide finishes
-in < 1 sec  →  UnitTest
+The proof is `rfl` (or `simp`, `induction`, named lemmas)
+   → ProvenTheorem.
 
-anything else  →  ProvenTheorem (or UnprovenConjecture if the proof
-                  doesn't exist yet)
+The proof is `native_decide`, body has DecidableEq, runs in <1 sec
+   → UnitTest.
+
+The proof would be `native_decide` but it hangs or fails to synthesize
+   → ProvenTheorem (write a structural proof) or UnprovenConjecture
+     (if the proof doesn't exist yet).
 ```
 
-**Watch out for:** custom inductive types (`AgentAction`, `ReviewVerdict`,
-your own structures). Unless they `deriving DecidableEq`, equality on
-them will fail `native_decide`'s synthesis check. The original `_proof`
-form using `rfl` works because `rfl` doesn't need `Decidable` — but the
-`UnitTest` macro requires it.
+#### Watch-outs
 
-**Anti-pattern: bulk-downgrade by syntactic heuristic.** Auditing 280
-ProvenTheorems with a "no ∀ → downgrade" rule will produce ~95%
-correct conversions but the remaining 5% will silently break the
-build (often only on a clean rebuild — see the "library vs binary"
-note in the verify-all.sh script). Run `lake build L3m` after any
-bulk downgrade.
+  * **Custom inductive types** (`AgentAction`, `ReviewVerdict`, your
+    own structures). Unless they `deriving DecidableEq`, equality on
+    them will fail `native_decide`'s synthesis check, but `rfl`
+    handles them fine. Default to `ProvenTheorem` with `rfl`.
+  * **`@[implemented_by]` definitions.** When a definition has both
+    a kernel reference and a runtime implementation, `rfl` proves a
+    fact about the kernel reference; `native_decide` runs the
+    implementation. They should agree, but if they diverge,
+    `native_decide` reflects the actual program behavior.
+
+#### Anti-pattern: bulk-downgrade by syntactic heuristic
+
+Auditing 280 ProvenTheorems with a "no ∀ → downgrade" rule will
+produce ~95% correct conversions but the remaining 5% will silently
+break the build (often only on a clean rebuild — see the "library vs
+binary" note in `Scripts/verify-all.sh`). **Run `lake build L3m`
+after any bulk downgrade.**
 
 ---
 
