@@ -15,10 +15,27 @@ claims. Read these conventions before making changes.
 
 ## Required reading
 
-Before writing or reviewing manifests, read
-**`templates/MANIFEST_GUIDE.md`** in the lean-manifests repo. It covers
-the shape of a good manifest, the `registerTestResults` pattern,
-anti-patterns to avoid, and promotion discipline.
+Before writing or reviewing manifests, read **TWO** files in the
+lean-manifests repo:
+
+  1. **`templates/MANIFEST_GUIDE.md`** — the shape of a good manifest,
+     the `registerTestResults` pattern, anti-patterns to avoid, and
+     promotion discipline. Pay particular attention to § 5e (UnitTest
+     vs ProvenTheorem) and § 5f (the semi-pivot toward Leo-style
+     proofs).
+
+  2. **`templates/examples-of-good-theorems.lean`** — canonical
+     patterns drawn from production Lean software (lean-zip,
+     RadixExperiment). Shows the relational-spec-vs-implementation
+     pattern, soundness + completeness theorems, optimization
+     correctness, and the one legitimate use of `native_decide`
+     (exhaustive checking over a generated structure).
+
+The single most important discipline: **prefer structural proofs**
+(`rfl`, `simp`, `induction`, `decide`, `grind`, `omega`) over
+`native_decide`. A `ProvenTheorem` whose proof is `native_decide` on
+a fixture is dress-up — relabel it as `UnitTest` (honest) or write
+the universal version with a real proof.
 
 ## Evidence hierarchy
 

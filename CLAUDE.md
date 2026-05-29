@@ -4,6 +4,14 @@
 > the workflow for working ON lean-manifests itself. For downstream
 > projects, copy `templates/CLAUDE.md` (or `templates/AGENTS.md`) to
 > your project root. See `templates/README.md` for details.
+>
+> **The two seed files for downstream projects** are
+> `templates/MANIFEST_GUIDE.md` (the working manual; § 5e and § 5f
+> are the most important sections) and
+> `templates/examples-of-good-theorems.lean` (canonical patterns
+> drawn from production Lean software — lean-zip, RadixExperiment).
+> Anyone authoring manifest entries should read both before
+> starting.
 
 ## What this repo is
 

@@ -104,6 +104,8 @@ See `templates/README.md` for details.
 | File                                       | What it's about                              |
 |--------------------------------------------|----------------------------------------------|
 | `templates/MANIFEST_GUIDE.md`              | How to write a good manifest                 |
+| `templates/examples-of-good-theorems.lean` | Canonical theorem patterns (lean-zip + RadixExperiment style) |
+| `templates/MANIFEST_AXIOM_AUDIT.md`        | Pinning headline theorems to a trusted-core allowlist |
 | `templates/MANIFEST_LATEX_ROUNDTRIP.md`    | Paper appendices with hover-back-to-Lean    |
 | `CLAUDE.md`                                | Conventions for working ON lean-manifests itself |
 
